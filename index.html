@@ -1,0 +1,985 @@
+import { useState, useEffect } from "react";
+import {
+  Activity,
+  Thermometer,
+  Boxes,
+  Truck,
+  Radio,
+  Settings,
+  ShieldAlert,
+  Download,
+  Filter,
+  X,
+  RotateCcw,
+  Check,
+  Search,
+  CheckCircle,
+  BellRing,
+  HelpCircle,
+  Eye,
+  Plus,
+  History
+} from "lucide-react";
+import { Asset, LogEntry, DispatchLog, GeminiAnalysisResponse } from "./types";
+import { INITIAL_ASSETS, INITIAL_LOGS } from "./data/assetsData";
+import Sidebar from "./components/Sidebar";
+import AIAssistant from "./components/AIAssistant";
+import GeofenceMap from "./components/GeofenceMap";
+import DispatchModal from "./components/DispatchModal";
+import ThermalAnalyticsTab from "./components/ThermalAnalyticsTab";
+import AssetFleetTab from "./components/AssetFleetTab";
+import DispatchLogsTab from "./components/DispatchLogsTab";
+
+export default function App() {
+  const [currentTab, setCurrentTab] = useState<string>("telemetry");
+
+  // Core application states
+  const [assets, setAssets] = useState<Asset[]>(INITIAL_ASSETS);
+  const [logs, setLogs] = useState<LogEntry[]>(INITIAL_LOGS);
+  const [dispatchRuns, setDispatchRuns] = useState<DispatchLog[]>([]);
+
+  // Filtering states
+  const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [showFilters, setShowFilters] = useState<boolean>(false);
+
+  // Anomaly selection for the predictive dispatch modal
+  const [selectedAssetForDispatch, setSelectedAssetForDispatch] = useState<Asset | null>(null);
+
+  // Settings dropdown visibility
+  const [showSettings, setShowSettings] = useState<boolean>(false);
+
+  // Toast notifications
+  interface Toast {
+    id: string;
+    title: string;
+    message: string;
+  }
+  const [toasts, setToasts] = useState<Toast[]>([]);
+
+  const addToast = (title: string, message: string) => {
+    const id = `toast-${Date.now()}`;
+    setToasts((prev) => [...prev, { id, title, message }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 6000);
+  };
+
+  // Selected asset from map coordinate clicks
+  const [selectedAssetId, setSelectedAssetId] = useState<string | null>("CC-CORP-12");
+
+  // Stability metric state (fluctuates slightly)
+  const [stabilityIndex, setStabilityIndex] = useState(99.82);
+  const [latency, setLatency] = useState(42);
+
+  // Helper to parse door open string into total seconds
+  const parseDoorOpenSeconds = (str: string): number => {
+    if (!str || str === "UNKNOWN" || str === "00:00") return 0;
+    const parts = str.split(":");
+    if (parts.length !== 2) return 0;
+    const mins = parseInt(parts[0], 10) || 0;
+    const secs = parseInt(parts[1], 10) || 0;
+    return mins * 60 + secs;
+  };
+
+  // Helper to format total seconds back to MM:SS string
+  const formatDoorOpenSeconds = (seconds: number): string => {
+    if (seconds <= 0) return "00:00";
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  // Helper to get cargo commercial valuation in USD
+  const getCargoCommercialValuation = (payload: string): number => {
+    const p = payload.toUpperCase();
+    if (p.includes("VACCINE")) return 95000;
+    if (p.includes("ENZYME")) return 45000;
+    if (p.includes("REAGENT")) return 30000;
+    if (p.includes("SAMPLE") || p.includes("BIO")) return 12000;
+    return 25000;
+  };
+
+  // Helper to run background rule evaluation pipeline
+  const evaluateAssetTelemetry = (asset: Asset): { status: typeof asset.status; assetValueAtRisk: number } => {
+    let status = asset.status;
+
+    if (asset.temp === null || asset.liveTemp === null || asset.gasPressure === null || asset.batteryPct === null || asset.doorOpen === "UNKNOWN") {
+      status = "UNPLUGGED";
+    } else {
+      // 1. CRYOGENIC ACCURACY: VACCINE_TYPE_B requires temperatures strictly between -90°C and -70°C. If it drifts warmer than -70°C, set status to "DEFECT".
+      if (asset.payload.toUpperCase().includes("VACCINE_TYPE_B")) {
+        if (asset.liveTemp !== null && asset.liveTemp > -70.0) {
+          status = "DEFECT";
+        } else if (asset.liveTemp !== null && (asset.liveTemp > -72.0 || asset.liveTemp < -90.0)) {
+          status = "WARNING";
+        } else {
+          status = "SAFE";
+        }
+      }
+
+      // 2. THERMODYNAMIC CROSS-METRIC DEPENDENCY: IF DoorOpen > "03:00" AND StaticHrs > 10, accelerate warning directly to "DEFECT" regardless of temperature
+      const doorSeconds = parseDoorOpenSeconds(asset.doorOpen);
+      if (doorSeconds > 180 && asset.staticHrs > 10) {
+        status = "DEFECT";
+      }
+
+      // 3. PREDICTIVE FAIL-SAFE: IF BatteryPct < 20% AND GasPressure < 0.50 bar, flag status as "DEFECT" even if LiveTemp is currently nominal
+      if (asset.batteryPct !== null && asset.batteryPct < 20 && asset.gasPressure !== null && asset.gasPressure < 0.50) {
+        status = "DEFECT";
+      }
+    }
+
+    // Set AssetValueAtRisk dynamically to commercial valuation if DEFECT or UNPLUGGED
+    let assetValueAtRisk = 0;
+    if (status === "DEFECT" || status === "UNPLUGGED") {
+      assetValueAtRisk = getCargoCommercialValuation(asset.payload);
+    }
+
+    return { status, assetValueAtRisk };
+  };
+
+  // Simulation Loop: fluctuate temperatures and trigger slight static hours increments
+  useEffect(() => {
+    const timer = setInterval(() => {
+      // Fluctuate stability metric
+      setStabilityIndex((prev) => {
+        const delta = (Math.random() - 0.5) * 0.02;
+        return Number(Math.min(100, Math.max(98, prev + delta)).toFixed(2));
+      });
+
+      // Fluctuate latency
+      setLatency((prev) => {
+        const delta = Math.floor((Math.random() - 0.5) * 4);
+        return Math.min(60, Math.max(35, prev + delta));
+      });
+
+      setAssets((prev) =>
+        prev.map((asset) => {
+          const updatedAsset = { ...asset };
+
+          // Update door open seconds slightly if it is currently open
+          if (updatedAsset.doorOpen !== "00:00" && updatedAsset.doorOpen !== "UNKNOWN") {
+            const currentSecs = parseDoorOpenSeconds(updatedAsset.doorOpen);
+            // Simulating 5 seconds passing
+            updatedAsset.doorOpen = formatDoorOpenSeconds(currentSecs + 5);
+          }
+
+          // Increment static hours slightly
+          updatedAsset.staticHrs = Number((updatedAsset.staticHrs + 0.1).toFixed(1));
+
+          // Fluctuate temperature if it's not null (N/A)
+          if (updatedAsset.temp !== null && updatedAsset.liveTemp !== null) {
+            let fluctuation = (Math.random() - 0.5) * 0.25;
+            // Let it drift in a realistic manner based on current status
+            if (updatedAsset.status === "WARNING") {
+              fluctuation += 0.08;
+            } else if (updatedAsset.status === "DEFECT") {
+              fluctuation += 0.18;
+            }
+            updatedAsset.temp = Number((updatedAsset.temp + fluctuation).toFixed(1));
+            updatedAsset.liveTemp = updatedAsset.temp;
+            updatedAsset.history = updatedAsset.history ? [...updatedAsset.history.slice(1), updatedAsset.temp] : [updatedAsset.temp];
+          }
+
+          // Fluctuate gas pressure and battery slightly
+          if (updatedAsset.gasPressure !== null) {
+            let pressureChange = (Math.random() - 0.5) * 0.02;
+            if (updatedAsset.status === "DEFECT" || updatedAsset.status === "WARNING") {
+              pressureChange -= 0.01; // progressive leak simulation
+            }
+            updatedAsset.gasPressure = Number(Math.max(0, updatedAsset.gasPressure + pressureChange).toFixed(2));
+          }
+
+          if (updatedAsset.batteryPct !== null) {
+            let batteryChange = Math.random() > 0.75 ? -1 : 0;
+            if (updatedAsset.status === "DEFECT") {
+              batteryChange = -1; // faster drain under error
+            }
+            updatedAsset.batteryPct = Math.max(0, updatedAsset.batteryPct + batteryChange);
+          }
+
+          // Run background rule evaluation pipeline
+          const { status, assetValueAtRisk } = evaluateAssetTelemetry(updatedAsset);
+          updatedAsset.status = status;
+          updatedAsset.assetValueAtRisk = assetValueAtRisk;
+
+          return updatedAsset;
+        })
+      );
+    }, 4000);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  // Streaming log simulations
+  useEffect(() => {
+    const logInterval = setInterval(() => {
+      const liveAssets = assets.filter((a) => a.status === "SAFE");
+      if (liveAssets.length === 0) return;
+      const randomAsset = liveAssets[Math.floor(Math.random() * liveAssets.length)];
+
+      const messages = [
+        `verified cryogenic loop handshake latency: ${Math.floor(Math.random() * 8) + 10}ms.`,
+        `vacuum lock seal calibration verified. Status: NOMINAL.`,
+        `transmitted telemetry block payload signature to dispatch gateway.`,
+        `sensor telemetry packet synchronized. Gasket compression: 94%.`,
+      ];
+
+      const newLog: LogEntry = {
+        id: `log-${Date.now()}`,
+        timestamp: new Date().toLocaleTimeString("en-US", { hour12: false }),
+        node: randomAsset.id,
+        message: messages[Math.floor(Math.random() * messages.length)],
+        type: "info",
+      };
+
+      setLogs((prev) => [newLog, ...prev.slice(0, 8)]);
+    }, 12000);
+
+    return () => clearInterval(logInterval);
+  }, [assets]);
+
+  // Handle addition of a newly registered asset
+  const handleAddAsset = (newAsset: Asset) => {
+    setAssets((prev) => [...prev, newAsset]);
+    addToast("NODE_COMMISSIONED", `Asset ${newAsset.id} online and streaming telemetry successfully.`);
+
+    // Log registration
+    const newLog: LogEntry = {
+      id: `log-${Date.now()}`,
+      timestamp: new Date().toLocaleTimeString("en-US", { hour12: false }),
+      node: newAsset.id,
+      message: `new edge node commissioned in ${newAsset.location}. Streaming on channel ${newAsset.channel}.`,
+      type: "success",
+    };
+    setLogs((prev) => [newLog, ...prev]);
+  };
+
+  // Authorize Predictive AI restock
+  const handleConfirmDispatch = (analysis: GeminiAnalysisResponse) => {
+    if (!selectedAssetForDispatch) return;
+
+    const assetId = selectedAssetForDispatch.id;
+
+    // Log to Event logs
+    const timestamp = new Date().toLocaleTimeString("en-US", { hour12: false });
+    const newLog: LogEntry = {
+      id: `log-${Date.now()}`,
+      timestamp,
+      node: "AI_CONTROLLER",
+      message: analysis.dispatch_log_entry || `PREDICTIVE RESTOCK dispatched for ${assetId}. Target < 4min.`,
+      type: "success",
+    };
+    setLogs((prev) => [newLog, ...prev]);
+
+    // Create Dispatch Log Entry
+    const newRun: DispatchLog = {
+      id: `RUN-${Math.floor(Math.random() * 9000) + 1000}`,
+      assetId,
+      timestamp,
+      payload: selectedAssetForDispatch.payload,
+      route: analysis.predictive_restock_route || "Direct Air-Grid",
+      status: "EN_ROUTE",
+      targetResolution: `${analysis.target_resolution_time || 4} min`,
+      diagnosis: analysis.diagnosis,
+      recommendation: analysis.recommendation,
+    };
+    setDispatchRuns((prev) => [newRun, ...prev]);
+
+    // Resolve asset status back to SAFE and nominate cryogenic temp target
+    setAssets((prev) =>
+      prev.map((asset) => {
+        if (asset.id === assetId) {
+          const startingTemp = asset.payload.includes("VACCINE")
+            ? -78.4
+            : asset.payload.includes("ENZYME")
+            ? -15.0
+            : -70.1;
+          return {
+            ...asset,
+            status: "SAFE",
+            temp: startingTemp,
+            doorOpen: "00:00",
+            history: [startingTemp, startingTemp, startingTemp, startingTemp, startingTemp],
+          };
+        }
+        return asset;
+      })
+    );
+
+    addToast("DISPATCH_EXECUTED", `AI predictive restock route payload sent for ${assetId}. Intercepting stock-out anomaly.`);
+    setSelectedAssetForDispatch(null);
+  };
+
+  // Manually solve an active dispatch log
+  const handleCompleteDispatch = (logId: string) => {
+    setDispatchRuns((prev) =>
+      prev.map((run) => {
+        if (run.id === logId) {
+          return { ...run, status: "COMPLETED" };
+        }
+        return run;
+      })
+    );
+
+    addToast("DISPATCH_RESOLVED", `Predictive run ${logId} marked completed. Payload verification successful.`);
+  };
+
+  const handleCancelDispatch = (logId: string) => {
+    setDispatchRuns((prev) =>
+      prev.map((run) => {
+        if (run.id === logId) {
+          return { ...run, status: "CANCELLED" };
+        }
+        return run;
+      })
+    );
+    addToast("DISPATCH_CANCELLED", `Predictive run ${logId} cancelled.`);
+  };
+
+  // Force trigger warnings/defects for demonstration purposes
+  const triggerSimulationAnomaly = (type: "WARNING" | "DEFECT" | "UNPLUGGED") => {
+    const metroAsset = assets.find((a) => a.id === "CC-METRO-01");
+    if (!metroAsset) return;
+
+    setAssets((prev) =>
+      prev.map((asset) => {
+        if (asset.id === "CC-METRO-01") {
+          return {
+            ...asset,
+            status: type,
+            temp: type === "UNPLUGGED" ? null : -55.2,
+            doorOpen: type === "DEFECT" ? "02:40" : "00:00",
+          };
+        }
+        return asset;
+      })
+    );
+
+    const timestamp = new Date().toLocaleTimeString("en-US", { hour12: false });
+    const message =
+      type === "UNPLUGGED"
+        ? "NODE_POWER_BREACH: CC-METRO-01 disconnected. Sensor telemetry N/A."
+        : `ALERT_THERMAL_DRIFT: Anomaly thresholds violated on CC-METRO-01.`;
+
+    setLogs((prev) => [
+      {
+        id: `log-${Date.now()}`,
+        timestamp,
+        node: "SIMULATOR",
+        message,
+        type: type === "UNPLUGGED" ? "error" : "warn",
+      },
+      ...prev,
+    ]);
+
+    addToast(`SIMULATION_${type}`, `Simulated ${type} event triggered on asset CC-METRO-01.`);
+    setShowSettings(false);
+  };
+
+  const handleResetSimulation = () => {
+    setAssets(INITIAL_ASSETS);
+    setLogs(INITIAL_LOGS);
+    setDispatchRuns([]);
+    addToast("TELEMETRY_RESET", "Telemetry configuration states reverted back to baseline matrices.");
+    setShowSettings(false);
+  };
+
+  // Filtered Assets list
+  const filteredAssets = assets.filter((asset) => {
+    const query = searchQuery.toLowerCase();
+    const matchesSearch =
+      asset.id.toLowerCase().includes(query) ||
+      asset.location.toLowerCase().includes(query) ||
+      asset.payload.toLowerCase().includes(query);
+
+    const matchesStatus = statusFilter === "ALL" || asset.status === statusFilter;
+
+    return matchesSearch && matchesStatus;
+  });
+
+  // Calculate stats
+  const defectCount = assets.filter((a) => a.status === "DEFECT").length;
+  const warningCount = assets.filter((a) => a.status === "WARNING").length;
+  const unpluggedCount = assets.filter((a) => a.status === "UNPLUGGED").length;
+
+  const atRiskAssets = assets.filter((a) => a.status === "DEFECT" || a.status === "UNPLUGGED");
+  const totalValueAtRisk = atRiskAssets.reduce((sum, a) => sum + (a.assetValueAtRisk || 0), 0);
+
+  return (
+    <div className="min-h-screen bg-surface flex flex-col selection:bg-tertiary/30 selection:text-white pb-16 md:pb-0">
+      {/* TopAppBar */}
+      <header className="fixed top-0 left-0 right-0 z-50 flex justify-between items-center w-full px-6 py-4 bg-surface border-b border-outline-variant/10">
+        <div className="flex items-center gap-3">
+          <Radio className="w-6 h-6 text-tertiary animate-pulse" />
+          <h1 className="font-mono text-[15px] font-bold tracking-tighter text-white uppercase">
+            EDGE_COLD // SYSTEM_MONITOR
+          </h1>
+        </div>
+
+        {/* Dynamic statistical counters matching HTML specs */}
+        <div className="hidden lg:flex items-center gap-4">
+          <div className="flex items-center gap-2 px-3 py-1 bg-surface-container rounded-full border border-outline-variant/10">
+            <span className="w-2 h-2 rounded-full bg-tertiary shadow-[0_0_8px_rgba(133,211,220,0.8)]"></span>
+            <span className="font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">
+              Active Networks: {assets.length}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 px-3 py-1 bg-surface-container rounded-full border border-outline-variant/10">
+            <span
+              className={`w-2 h-2 rounded-full ${
+                defectCount > 0 ? "bg-secondary shadow-[0_0_8px_rgba(255,180,169,0.8)] animate-pulse" : "bg-outline"
+              }`}
+            ></span>
+            <span className="font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">
+              Critical Defects: {defectCount}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 px-3 py-1 bg-surface-container rounded-full border border-outline-variant/10">
+            <span
+              className={`w-2 h-2 rounded-full ${
+                unpluggedCount > 0 ? "bg-error shadow-[0_0_8px_rgba(255,180,171,0.8)] animate-ping" : "bg-outline"
+              }`}
+            ></span>
+            <span className="font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">
+              Disconnected Assets: {unpluggedCount}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 relative">
+          <button
+            onClick={() => setShowSettings(!showSettings)}
+            className="p-2 hover:bg-surface-variant/40 text-on-surface hover:text-white rounded-lg transition-all cursor-pointer"
+            title="Configure simulation"
+          >
+            <Settings className="w-5 h-5 text-primary" />
+          </button>
+
+          {/* Settings dropdown menu */}
+          {showSettings && (
+            <div className="absolute right-0 top-12 w-64 bg-surface-container-high border border-outline-variant/30 rounded-xl shadow-2xl p-4 space-y-3 z-50 font-mono text-xs animate-in fade-in duration-150">
+              <span className="text-[10px] text-tertiary font-bold tracking-wider block border-b border-outline-variant/10 pb-1 uppercase">
+                CORES_SIMULATOR_PANEL
+              </span>
+
+              <div className="space-y-2">
+                <button
+                  onClick={() => triggerSimulationAnomaly("DEFECT")}
+                  className="w-full text-left px-2 py-1.5 hover:bg-surface-container-highest rounded text-white flex justify-between items-center cursor-pointer"
+                >
+                  <span>Inject DEFECT</span>
+                  <span className="text-[9px] bg-secondary-container text-secondary px-1 py-0.5 rounded">
+                    CC-METRO-01
+                  </span>
+                </button>
+                <button
+                  onClick={() => triggerSimulationAnomaly("WARNING")}
+                  className="w-full text-left px-2 py-1.5 hover:bg-surface-container-highest rounded text-white flex justify-between items-center cursor-pointer"
+                >
+                  <span>Inject WARNING</span>
+                  <span className="text-[9px] bg-amber-500/10 text-amber-500 px-1 py-0.5 rounded border border-amber-500/30">
+                    CC-METRO-01
+                  </span>
+                </button>
+                <button
+                  onClick={() => triggerSimulationAnomaly("UNPLUGGED")}
+                  className="w-full text-left px-2 py-1.5 hover:bg-surface-container-highest rounded text-white flex justify-between items-center cursor-pointer"
+                >
+                  <span>Inject UNPLUGGED</span>
+                  <span className="text-[9px] bg-error-container/20 text-error px-1 py-0.5 rounded border border-error-container/30">
+                    CC-METRO-01
+                  </span>
+                </button>
+                <button
+                  onClick={handleResetSimulation}
+                  className="w-full text-left px-2 py-1.5 hover:bg-surface-container-highest rounded text-tertiary flex items-center gap-1.5 border-t border-outline-variant/10 pt-2 cursor-pointer font-bold"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  RESET SYSTEM METRICS
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="w-8 h-8 rounded-full overflow-hidden border border-outline shrink-0">
+            <img
+              className="w-full h-full object-cover"
+              alt="Technical Operations Manager"
+              referrerPolicy="no-referrer"
+              src="https://lh3.googleusercontent.com/aida-public/AB6AXuDUR5Ix45pJXKb-I-TjUixhEPmQAc_oDxjL-eQPU48UR6jd9Te0XinxZrJwDc1tNMKzHrfk1zgSVgyoiSMKUr4bISSm-UCpE958UzhRhjXmzo9HZgn2otIqQJIiqMfwx_6it3eoC3CZxTi0EGRTUtJNja5fRQkfu7RBFe9KXMVrTPIYTSnM7CitOPruPkn-m5RBjG1DJhHJZNUYwFS3qseDvv9anDeT7yCCTD65edRZ3iDJnHolIAQ3gUO4J5QF-N0nd3bU0PjVGaUV"
+            />
+          </div>
+        </div>
+      </header>
+
+      {/* NavigationDrawer */}
+      <Sidebar
+        currentTab={currentTab}
+        setCurrentTab={setCurrentTab}
+        defectCount={defectCount}
+        unpluggedCount={unpluggedCount}
+      />
+
+      {/* Main Content */}
+      <main className="main-view md:ml-72 pt-20 flex-1 overflow-hidden flex flex-col h-screen bg-surface">
+        <div className="flex-1 overflow-y-auto custom-scrollbar px-6 py-6 lg:px-8 bg-surface">
+          {currentTab === "telemetry" && (
+            <div className="space-y-6">
+              {/* Page Header Area */}
+              <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-4 border-b border-outline-variant/10 pb-5">
+                <div>
+                  <h2 className="font-sans text-[26px] font-bold text-white tracking-tight">
+                    Multi-Payload Cold-Chain Telemetry
+                  </h2>
+                  <p className="text-on-surface-variant font-sans text-xs mt-1">
+                    Real-time edge node synchronization for sensitive biological and chemical assets.
+                  </p>
+                </div>
+
+                <div className="flex gap-2 w-full lg:w-auto">
+                  <button
+                    onClick={() => setShowFilters(!showFilters)}
+                    className={`px-4 py-2 bg-surface-container-highest border border-outline-variant/30 text-white font-mono text-xs rounded flex items-center gap-2 hover:bg-surface-variant transition-colors cursor-pointer w-full lg:w-auto justify-center ${
+                      statusFilter !== "ALL" || searchQuery ? "border-tertiary text-tertiary" : ""
+                    }`}
+                  >
+                    <Filter className="w-3.5 h-3.5 text-tertiary" />
+                    FILTER_CORES
+                  </button>
+                  <button
+                    onClick={() => {
+                      // Simulates log file compiler exporting
+                      addToast("EXPORT_COMPLETE", "Unified operations database logs exported in CSV format.");
+                    }}
+                    className="px-4 py-2 bg-tertiary text-on-tertiary font-mono text-xs font-bold rounded flex items-center gap-2 hover:opacity-90 shadow-[0_0_12px_rgba(133,211,220,0.3)] transition-all cursor-pointer w-full lg:w-auto justify-center"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    EXPORT_LOGS
+                  </button>
+                </div>
+              </div>
+
+              {/* EXECUTIVE ALERTS LAYER: prominent financial notification box for DEFECT or UNPLUGGED assets */}
+              {atRiskAssets.length > 0 && (
+                <div className="bg-red-500/10 border border-red-500/45 rounded-xl p-5 font-mono text-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4 animate-pulse">
+                  <div className="flex items-start gap-3">
+                    <ShieldAlert className="w-8 h-8 text-red-500 shrink-0 mt-0.5" />
+                    <div>
+                      <h3 className="font-bold text-red-500 uppercase tracking-widest text-sm">
+                        EXECUTIVE OPERATIONAL ALERT // CRITICAL FINANCIAL EXPOSURE
+                      </h3>
+                      <p className="text-on-surface-variant text-[11px] font-sans mt-1">
+                        {atRiskAssets.length} active cryogenic storage chambers are exhibiting extreme thermal or thermodynamic anomalies. Cargo integration integrity breached.
+                      </p>
+                      <div className="flex flex-wrap gap-2 mt-3">
+                        {atRiskAssets.map((asset) => (
+                          <span key={asset.id} className="bg-red-950/40 text-red-400 px-2.5 py-1 rounded border border-red-900/50 text-[10px]">
+                            <strong>{asset.id}</strong>: ${asset.assetValueAtRisk?.toLocaleString()} USD Risk ({asset.status})
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="bg-red-950/40 border border-red-900/50 rounded-lg p-4 text-center min-w-[200px] w-full md:w-auto">
+                    <span className="text-[10px] text-red-400 block uppercase tracking-wider">TOTAL VALUE AT RISK</span>
+                    <span className="text-xl font-bold text-red-500 block mt-1">
+                      ${totalValueAtRisk.toLocaleString()} USD
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Collapsible status filter bar */}
+              {showFilters && (
+                <div className="bg-surface-container-high border border-outline-variant/20 p-4 rounded-xl space-y-3 animate-in slide-in-from-top-3 duration-200">
+                  <div className="flex flex-col lg:flex-row gap-4 justify-between">
+                    {/* Status Pill Selectors */}
+                    <div className="space-y-1">
+                      <span className="font-mono text-[10px] text-on-surface-variant block uppercase">
+                        CRYO_STATUS_FILTER
+                      </span>
+                      <div className="flex flex-wrap gap-1.5 mt-1">
+                        {["ALL", "SAFE", "WARNING", "DEFECT", "UNPLUGGED"].map((st) => (
+                          <button
+                            key={st}
+                            onClick={() => setStatusFilter(st)}
+                            className={`px-3 py-1 rounded text-[10px] font-mono cursor-pointer border ${
+                              statusFilter === st
+                                ? "bg-tertiary text-on-tertiary border-tertiary"
+                                : "bg-surface-container-lowest text-on-surface-variant border-outline-variant/20 hover:border-tertiary/30"
+                            }`}
+                          >
+                            {st}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Search Field */}
+                    <div className="space-y-1 lg:w-72">
+                      <span className="font-mono text-[10px] text-on-surface-variant block uppercase">
+                        SEARCH_NODE_METADATA
+                      </span>
+                      <div className="relative mt-1">
+                        <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 transform -translate-y-1/2 text-on-surface-variant/40" />
+                        <input
+                          type="text"
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          placeholder="Search asset, loc, payload..."
+                          className="w-full bg-surface-container-lowest border border-outline-variant/20 rounded pl-8 pr-3 py-1 text-xs font-mono text-white placeholder-on-surface-variant/30 focus:outline-none focus:border-tertiary/50"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Bento Grid Metrics and Live Table */}
+              <div className="space-y-6">
+                {/* Live Telemetry Table Section */}
+                <div className="bg-surface-container-low border border-outline-variant/20 rounded-xl overflow-hidden shadow-2xl">
+                  <div className="px-6 py-4 border-b border-outline-variant/10 bg-surface-container flex justify-between items-center">
+                    <span className="font-mono text-xs text-tertiary uppercase tracking-widest font-bold block">
+                      Live Asset Fleet Telemetry
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-tertiary animate-pulse shadow-[0_0_6px_#85d3dc]"></span>
+                      <span className="font-mono text-[10px] text-on-surface-variant uppercase font-bold">
+                        STREAMING_REALTIME
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-surface-container-high/50 border-b border-outline-variant/10">
+                          <th className="px-6 py-3.5 font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">
+                            Asset ID
+                          </th>
+                          <th className="px-6 py-3.5 font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">
+                            Location
+                          </th>
+                          <th className="px-6 py-3.5 font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">
+                            Channel
+                          </th>
+                          <th className="px-6 py-3.5 font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">
+                            Payload
+                          </th>
+                          <th className="px-6 py-3.5 font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-wider text-right">
+                            Live Temp
+                          </th>
+                          <th className="px-6 py-3.5 font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-wider text-right">
+                            Door Open
+                          </th>
+                          <th className="px-6 py-3.5 font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-wider text-right">
+                            Static Hrs
+                          </th>
+                          <th className="px-6 py-3.5 font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-wider text-center">
+                            Status
+                          </th>
+                          <th className="px-6 py-3.5 font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-wider text-center">
+                            Actions
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-outline-variant/5">
+                        {filteredAssets.length === 0 ? (
+                          <tr>
+                            <td colSpan={9} className="px-6 py-12 text-center text-xs font-mono text-on-surface-variant">
+                              NO CRYO-NODES MATCH ACTIVE SEARCH MATRICES
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredAssets.map((asset) => {
+                            const isDefectiveOrUnplugged = asset.status === "DEFECT" || asset.status === "UNPLUGGED";
+                            return (
+                              <tr
+                                key={asset.id}
+                                onClick={() => setSelectedAssetId(asset.id)}
+                                className={`hover:bg-surface-variant/20 transition-colors group cursor-pointer ${
+                                  isDefectiveOrUnplugged ? "bg-error-container/5" : ""
+                                } ${selectedAssetId === asset.id ? "bg-surface-container-high/40" : ""}`}
+                              >
+                                <td className="px-6 py-4 font-mono text-xs font-bold text-white">
+                                  {asset.id}
+                                </td>
+                                <td className="px-6 py-4 font-sans text-xs text-on-surface-variant">
+                                  {asset.location}
+                                </td>
+                                <td className="px-6 py-4 font-sans text-xs text-on-surface-variant/70">
+                                  {asset.channel}
+                                </td>
+                                <td className="px-6 py-4 font-sans text-xs text-white">
+                                  {asset.payload}
+                                </td>
+                                <td
+                                  className={`px-6 py-4 font-mono text-xs text-right font-semibold ${
+                                    asset.status === "SAFE"
+                                      ? "text-tertiary"
+                                      : asset.status === "WARNING"
+                                      ? "text-amber-500"
+                                      : "text-error"
+                                  }`}
+                                >
+                                  {asset.temp !== null ? `${asset.temp}°C` : "N/A"}
+                                </td>
+                                <td
+                                  className={`px-6 py-4 font-mono text-xs text-right ${
+                                    asset.status === "DEFECT" ? "text-secondary" : "text-on-surface-variant"
+                                  }`}
+                                >
+                                  {asset.doorOpen}
+                                </td>
+                                <td className="px-6 py-4 font-mono text-xs text-right text-on-surface-variant">
+                                  {asset.staticHrs}
+                                </td>
+                                <td className="px-6 py-4 text-center">
+                                  <span
+                                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                                      asset.status === "SAFE"
+                                        ? "bg-tertiary/10 border-tertiary/40 text-tertiary"
+                                        : asset.status === "DEFECT"
+                                        ? "bg-secondary-container/15 border-secondary/40 text-secondary animate-pulse"
+                                        : asset.status === "WARNING"
+                                        ? "bg-amber-500/10 border-amber-500/40 text-amber-500"
+                                        : "bg-[#F40009]/15 border-[#F40009]/50 text-white animate-pulse"
+                                    }`}
+                                  >
+                                    {asset.status}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-4 text-center">
+                                  {isDefectiveOrUnplugged ? (
+                                    <div className="flex flex-col items-center gap-1">
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setSelectedAssetForDispatch(asset);
+                                        }}
+                                        className="px-3 py-1.5 bg-[#F40009] text-white font-mono text-[9px] font-bold rounded hover:scale-105 active:scale-95 transition-all shadow-[0_0_10px_rgba(244,0,9,0.4)] cursor-pointer"
+                                      >
+                                        DISPATCH PREDICTIVE RESTOCK
+                                      </button>
+                                      <span className="text-[8px] text-on-surface-variant/60 font-mono tracking-wider">
+                                        Target Resolution: &lt; 4min
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        addToast("TELEMETRY_LOGGED", `Telemetry metrics for ${asset.id} validated as optimal.`);
+                                      }}
+                                      className="p-1 hover:bg-surface-container-highest rounded text-on-surface-variant hover:text-white cursor-pointer"
+                                    >
+                                      <Eye className="w-4 h-4" />
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Secondary Analytics Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {/* Payload Stability */}
+                  <div className="bg-surface-container border border-outline-variant/10 rounded-xl p-5 relative overflow-hidden group">
+                    <div className="absolute inset-0 bg-gradient-to-br from-tertiary/5 to-transparent pointer-events-none"></div>
+                    <div className="relative z-10 flex flex-col justify-between h-full">
+                      <div className="flex justify-between items-start mb-4">
+                        <span className="font-mono text-[11px] font-bold text-on-surface-variant uppercase tracking-wider">
+                          Payload Stability Index
+                        </span>
+                        <Activity className="w-5 h-5 text-tertiary" />
+                      </div>
+                      <div className="flex items-baseline gap-2">
+                        <h3 className="font-mono text-2xl font-bold text-white">{stabilityIndex}%</h3>
+                        <span className="text-tertiary font-mono text-[10px]">+0.04%</span>
+                      </div>
+
+                      {/* Visual placeholder for sparkline bar */}
+                      <div className="mt-4 h-16 w-full flex items-end gap-1">
+                        <div className="flex-1 bg-tertiary/10 h-8 rounded-t"></div>
+                        <div className="flex-1 bg-tertiary/20 h-10 rounded-t"></div>
+                        <div className="flex-1 bg-tertiary/10 h-6 rounded-t"></div>
+                        <div className="flex-1 bg-tertiary/30 h-12 rounded-t"></div>
+                        <div className="flex-1 bg-tertiary/10 h-9 rounded-t"></div>
+                        <div className="flex-1 bg-tertiary/40 h-14 rounded-t animate-pulse"></div>
+                        <div className="flex-1 bg-tertiary/20 h-11 rounded-t"></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Carrier Geofencing Radar */}
+                  <div className="bg-surface-container border border-outline-variant/10 rounded-xl p-5 relative overflow-hidden group">
+                    <div className="relative z-10 h-full flex flex-col justify-between">
+                      <div className="flex justify-between items-start mb-2">
+                        <span className="font-mono text-[11px] font-bold text-on-surface-variant uppercase tracking-wider">
+                          Active Carrier Geofencing
+                        </span>
+                        <Radio className="w-4 h-4 text-tertiary animate-pulse" />
+                      </div>
+
+                      <div className="flex-1 min-h-[140px] mt-2">
+                        <GeofenceMap
+                          assets={assets}
+                          selectedAssetId={selectedAssetId}
+                          onSelectAsset={(id) => setSelectedAssetId(id)}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* System Latency P99 */}
+                  <div className="bg-surface-container border border-outline-variant/10 rounded-xl p-5 relative overflow-hidden group">
+                    <div className="relative z-10 flex flex-col justify-between h-full">
+                      <div className="flex justify-between items-start mb-4">
+                        <span className="font-mono text-[11px] font-bold text-on-surface-variant uppercase tracking-wider">
+                          System Latency (P99)
+                        </span>
+                        <Activity className="w-5 h-5 text-secondary animate-pulse" />
+                      </div>
+                      <div className="flex items-baseline gap-2">
+                        <h3 className="font-mono text-2xl font-bold text-white">{latency}ms</h3>
+                        <span className="text-secondary font-mono text-[10px] font-bold uppercase tracking-wider">
+                          STABLE
+                        </span>
+                      </div>
+
+                      {/* Cool block layout latency bar */}
+                      <div className="mt-4 flex items-center gap-1 overflow-hidden">
+                        <div className="h-1 flex-1 bg-secondary rounded-full"></div>
+                        <div className="h-1 flex-1 bg-secondary rounded-full"></div>
+                        <div className="h-1 flex-1 bg-secondary rounded-full animate-pulse"></div>
+                        <div className="h-1 flex-1 bg-secondary/20 rounded-full"></div>
+                        <div className="h-1 flex-1 bg-secondary/20 rounded-full"></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Operational Alerts Logs Section */}
+                <div className="bg-surface-container-high/30 border border-outline-variant/10 rounded-xl p-6">
+                  <h4 className="font-mono text-xs text-on-surface-variant font-bold mb-4 flex items-center gap-2 uppercase tracking-widest border-b border-outline-variant/10 pb-2">
+                    <History className="w-4 h-4 text-tertiary" />
+                    SYSTEM_EVENTS_LOG
+                  </h4>
+                  <div className="space-y-3 max-h-48 overflow-y-auto custom-scrollbar">
+                    {logs.map((log) => (
+                      <div
+                        key={log.id}
+                        className="flex items-center gap-4 py-2 border-b border-outline-variant/5 text-xs font-mono"
+                      >
+                        <span className="text-[10px] text-tertiary shrink-0">{log.timestamp}</span>
+                        <span className="w-1 h-1 rounded-full bg-outline-variant"></span>
+                        <p className="text-on-surface-variant leading-relaxed text-[11px]">
+                          <span
+                            className={`font-bold mr-1.5 ${
+                              log.type === "error"
+                                ? "text-error"
+                                : log.type === "warn"
+                                ? "text-secondary"
+                                : log.type === "success"
+                                ? "text-tertiary"
+                                : "text-primary"
+                            }`}
+                          >
+                            {log.node ? `${log.node} :` : ""}
+                          </span>
+                          {log.message}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {currentTab === "thermal" && <ThermalAnalyticsTab assets={assets} />}
+
+          {currentTab === "fleet" && <AssetFleetTab assets={assets} onAddAsset={handleAddAsset} />}
+
+          {currentTab === "dispatch" && (
+            <DispatchLogsTab
+              logs={dispatchRuns}
+              onCompleteDispatch={handleCompleteDispatch}
+              onCancelDispatch={handleCancelDispatch}
+            />
+          )}
+        </div>
+      </main>
+
+      {/* AI Assistant Core widget */}
+      <AIAssistant fleetState={assets} logs={logs} />
+
+      {/* Predictive restock dispatch popup modal */}
+      {selectedAssetForDispatch && (
+        <DispatchModal
+          asset={selectedAssetForDispatch}
+          logs={logs}
+          onClose={() => setSelectedAssetForDispatch(null)}
+          onConfirmDispatch={handleConfirmDispatch}
+        />
+      )}
+
+      {/* BottomNavBar (Mobile viewport only) matching mock HTML details */}
+      <nav className="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center h-16 md:hidden bg-surface-container border-t border-outline-variant/20 shadow-2xl px-4">
+        {[
+          { id: "telemetry", label: "DASHBOARD", icon: Activity },
+          { id: "thermal", label: "ALERTS", icon: Thermometer },
+          { id: "fleet", label: "FLEET", icon: Boxes },
+          { id: "dispatch", label: "REPORTS", icon: Truck },
+        ].map((item) => {
+          const Icon = item.icon;
+          const isActive = currentTab === item.id;
+          return (
+            <button
+              key={item.id}
+              onClick={() => setCurrentTab(item.id)}
+              className={`flex flex-col items-center justify-center rounded-xl px-4 py-1 active:scale-105 duration-150 cursor-pointer ${
+                isActive ? "text-tertiary bg-tertiary-container/30" : "text-on-surface-variant opacity-60"
+              }`}
+            >
+              <Icon className="w-5 h-5" />
+              <span className="font-mono text-[9px] tracking-widest font-bold">{item.label}</span>
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* Toast Notification overlays */}
+      <div className="fixed bottom-20 md:bottom-8 right-8 z-[120] flex flex-col gap-3 pointer-events-none">
+        {toasts.map((t) => (
+          <div
+            key={t.id}
+            className="bg-surface-container-highest border-l-4 border-tertiary p-4 rounded shadow-2xl flex items-center gap-4 transition-all duration-300 pointer-events-auto max-w-sm animate-in slide-in-from-right duration-200"
+          >
+            <Truck className="w-5 h-5 text-tertiary shrink-0 animate-bounce" />
+            <div className="flex flex-col font-mono text-xs">
+              <span className="font-bold text-white uppercase tracking-wider">{t.title}</span>
+              <span className="text-on-surface-variant text-[11px] leading-relaxed mt-0.5">
+                {t.message}
+              </span>
+            </div>
+            <button
+              onClick={() => setToasts((prev) => prev.filter((toast) => toast.id !== t.id))}
+              className="ml-auto opacity-50 hover:opacity-100 cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
