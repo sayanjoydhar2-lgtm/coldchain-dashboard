@@ -1,985 +1,1872 @@
-import { useState, useEffect } from "react";
-import {
-  Activity,
-  Thermometer,
-  Boxes,
-  Truck,
-  Radio,
-  Settings,
-  ShieldAlert,
-  Download,
-  Filter,
-  X,
-  RotateCcw,
-  Check,
-  Search,
-  CheckCircle,
-  BellRing,
-  HelpCircle,
-  Eye,
-  Plus,
-  History
-} from "lucide-react";
-import { Asset, LogEntry, DispatchLog, GeminiAnalysisResponse } from "./types";
-import { INITIAL_ASSETS, INITIAL_LOGS } from "./data/assetsData";
-import Sidebar from "./components/Sidebar";
-import AIAssistant from "./components/AIAssistant";
-import GeofenceMap from "./components/GeofenceMap";
-import DispatchModal from "./components/DispatchModal";
-import ThermalAnalyticsTab from "./components/ThermalAnalyticsTab";
-import AssetFleetTab from "./components/AssetFleetTab";
-import DispatchLogsTab from "./components/DispatchLogsTab";
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EDGE_COLD // SYSTEM_MONITOR</title>
+  
+  <!-- Tailwind CSS v3 CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+          colors: {
+            surface: '#051424',
+            'surface-container': '#122131',
+            'surface-container-low': '#0d1c2d',
+            'surface-container-high': '#1c2b3c',
+            'surface-container-highest': '#273647',
+            'surface-container-lowest': '#010f1f',
+            tertiary: '#85d3dc',
+            'tertiary-container': '#00262a',
+            'on-tertiary': '#00363b',
+            secondary: '#ffb4a9',
+            'secondary-container': '#ff5543',
+            'on-surface-variant': '#c6c6cb',
+            'outline-variant': '#45474b',
+            error: '#ffb4ab',
+            'error-container': '#93000a'
+          }
+        }
+      }
+    }
+  </script>
+  
+  <style>
+    body {
+      background-color: #051424;
+      color: #d4e4fa;
+      font-family: 'Inter', sans-serif;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 4px;
+      height: 4px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #273647;
+      border-radius: 2px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: #85d3dc;
+    }
+    @keyframes pulse-red-glow {
+      0%, 100% { border-color: rgba(239, 68, 68, 0.45); box-shadow: 0 0 0px rgba(239, 68, 68, 0); }
+      50% { border-color: rgba(239, 68, 68, 0.85); box-shadow: 0 0 12px rgba(239, 68, 68, 0.15); }
+    }
+    .animate-pulse-red {
+      animation: pulse-red-glow 2s infinite ease-in-out;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col md:flex-row overflow-hidden">
 
-export default function App() {
-  const [currentTab, setCurrentTab] = useState<string>("telemetry");
+  <!-- ================= SIDEBAR ================= -->
+  <aside class="w-full md:w-72 bg-[#030d19] border-b md:border-b-0 md:border-r border-outline-variant/10 flex flex-col shrink-0 z-40">
+    <!-- Brand / Title Header -->
+    <div class="px-6 py-5 border-b border-outline-variant/10 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <i data-lucide="radio" class="w-6 h-6 text-tertiary animate-pulse"></i>
+        <h1 class="font-mono text-[14px] font-bold tracking-tighter text-white uppercase">
+          EDGE_COLD // MONITOR
+        </h1>
+      </div>
+      <span class="md:hidden text-[10px] bg-surface-container px-2 py-0.5 rounded text-tertiary font-mono">
+        v1.0.0
+      </span>
+    </div>
 
-  // Core application states
-  const [assets, setAssets] = useState<Asset[]>(INITIAL_ASSETS);
-  const [logs, setLogs] = useState<LogEntry[]>(INITIAL_LOGS);
-  const [dispatchRuns, setDispatchRuns] = useState<DispatchLog[]>([]);
+    <!-- Navigation Menu Options -->
+    <nav class="flex-1 px-4 py-6 space-y-1">
+      <button onclick="switchTab('telemetry')" id="nav-telemetry" class="w-full flex items-center justify-between px-4 py-3 rounded-xl font-mono text-xs font-bold tracking-wider transition-all duration-150 bg-tertiary-container/30 text-tertiary border-l-2 border-tertiary">
+        <div class="flex items-center gap-3">
+          <i data-lucide="activity" class="w-4 h-4"></i>
+          <span>LIVE TELEMETRY</span>
+        </div>
+        <span id="badge-telemetry-total" class="bg-[#051424] text-white px-2 py-0.5 rounded-md text-[10px] border border-outline-variant/20">4</span>
+      </button>
 
-  // Filtering states
-  const [statusFilter, setStatusFilter] = useState<string>("ALL");
-  const [searchQuery, setSearchQuery] = useState<string>("");
-  const [showFilters, setShowFilters] = useState<boolean>(false);
+      <button onclick="switchTab('thermal')" id="nav-thermal" class="w-full flex items-center justify-between px-4 py-3 rounded-xl font-mono text-xs font-bold tracking-wider transition-all duration-150 text-on-surface-variant/70 hover:bg-surface-variant/20 hover:text-white">
+        <div class="flex items-center gap-3">
+          <i data-lucide="thermometer" class="w-4 h-4"></i>
+          <span>THERMAL ANALYTICS</span>
+        </div>
+      </button>
 
-  // Anomaly selection for the predictive dispatch modal
-  const [selectedAssetForDispatch, setSelectedAssetForDispatch] = useState<Asset | null>(null);
+      <button onclick="switchTab('fleet')" id="nav-fleet" class="w-full flex items-center justify-between px-4 py-3 rounded-xl font-mono text-xs font-bold tracking-wider transition-all duration-150 text-on-surface-variant/70 hover:bg-surface-variant/20 hover:text-white">
+        <div class="flex items-center gap-3">
+          <i data-lucide="boxes" class="w-4 h-4"></i>
+          <span>ASSET FLEET</span>
+        </div>
+      </button>
 
-  // Settings dropdown visibility
-  const [showSettings, setShowSettings] = useState<boolean>(false);
+      <button onclick="switchTab('dispatch')" id="nav-dispatch" class="w-full flex items-center justify-between px-4 py-3 rounded-xl font-mono text-xs font-bold tracking-wider transition-all duration-150 text-on-surface-variant/70 hover:bg-surface-variant/20 hover:text-white">
+        <div class="flex items-center gap-3">
+          <i data-lucide="truck" class="w-4 h-4"></i>
+          <span>DISPATCH LOGS</span>
+        </div>
+        <span id="badge-dispatch-active" class="bg-red-500/10 text-red-400 px-2 py-0.5 rounded-md text-[10px] border border-red-500/20 hidden">0</span>
+      </button>
+    </nav>
 
-  // Toast notifications
-  interface Toast {
-    id: string;
-    title: string;
-    message: string;
-  }
-  const [toasts, setToasts] = useState<Toast[]>([]);
+    <!-- Sidebar Bottom Status Indicators -->
+    <div class="p-6 border-t border-outline-variant/10 space-y-4 font-mono text-[10px]">
+      <div class="flex justify-between items-center text-on-surface-variant/60">
+        <span>SECURITY_LEVEL:</span>
+        <span class="text-tertiary font-bold">CRYOGENIC_A1</span>
+      </div>
+      <div class="flex justify-between items-center text-on-surface-variant/60">
+        <span>DATABASE_SYNC:</span>
+        <span class="text-white">STANDALONE_CDN</span>
+      </div>
+      <div class="border-t border-outline-variant/10 pt-4 flex flex-col gap-1">
+        <div class="flex items-center gap-2">
+          <span class="w-1.5 h-1.5 rounded-full bg-tertiary animate-ping"></span>
+          <span class="text-on-surface-variant/80 uppercase font-bold text-[9px] tracking-wider">NETWORK_TRAFFIC_LOAD</span>
+        </div>
+        <span class="text-xs text-white font-bold pl-3.5">91 Gb/s</span>
+      </div>
+    </div>
+  </aside>
 
-  const addToast = (title: string, message: string) => {
-    const id = `toast-${Date.now()}`;
-    setToasts((prev) => [...prev, { id, title, message }]);
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 6000);
-  };
+  <!-- ================= MAIN LAYOUT WRAPPER ================= -->
+  <div class="flex-1 flex flex-col min-w-0 overflow-hidden relative">
 
-  // Selected asset from map coordinate clicks
-  const [selectedAssetId, setSelectedAssetId] = useState<string | null>("CC-CORP-12");
+    <!-- ================= TOP APP BAR ================= -->
+    <header class="w-full px-6 py-4 bg-[#030d19]/80 backdrop-blur-md border-b border-outline-variant/10 flex justify-between items-center z-30">
+      <div class="flex items-center gap-3">
+        <span class="font-mono text-[13px] font-bold tracking-tighter text-white uppercase hidden md:inline">
+          EDGE_COLD // SYSTEM_MONITOR
+        </span>
+      </div>
 
-  // Stability metric state (fluctuates slightly)
-  const [stabilityIndex, setStabilityIndex] = useState(99.82);
-  const [latency, setLatency] = useState(42);
+      <!-- Top statistics capsules (always visible on desktop) -->
+      <div class="hidden lg:flex items-center gap-4">
+        <div class="flex items-center gap-2 px-3 py-1 bg-surface-container rounded-full border border-outline-variant/10">
+          <span class="w-2 h-2 rounded-full bg-tertiary shadow-[0_0_8px_rgba(133,211,220,0.8)]"></span>
+          <span class="font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">
+            Active Networks: <span id="top-total-assets">4</span>
+          </span>
+        </div>
+        <div class="flex items-center gap-2 px-3 py-1 bg-surface-container rounded-full border border-outline-variant/10">
+          <span id="top-critical-dot" class="w-2 h-2 rounded-full bg-outline"></span>
+          <span class="font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">
+            Critical Defects: <span id="top-defect-count">1</span>
+          </span>
+        </div>
+        <div class="flex items-center gap-2 px-3 py-1 bg-surface-container rounded-full border border-outline-variant/10">
+          <span id="top-disconnected-dot" class="w-2 h-2 rounded-full bg-outline"></span>
+          <span class="font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">
+            Disconnected: <span id="top-unplugged-count">1</span>
+          </span>
+        </div>
+      </div>
 
-  // Helper to parse door open string into total seconds
-  const parseDoorOpenSeconds = (str: string): number => {
-    if (!str || str === "UNKNOWN" || str === "00:00") return 0;
-    const parts = str.split(":");
-    if (parts.length !== 2) return 0;
-    const mins = parseInt(parts[0], 10) || 0;
-    const secs = parseInt(parts[1], 10) || 0;
-    return mins * 60 + secs;
-  };
+      <!-- Settings Panel Trigger and Avatar -->
+      <div class="flex items-center gap-4 relative">
+        <button onclick="toggleSettings()" class="p-2 hover:bg-surface-variant/40 text-on-surface hover:text-white rounded-lg transition-all cursor-pointer" title="Configure simulation">
+          <i data-lucide="settings" class="w-5 h-5 text-primary"></i>
+        </button>
 
-  // Helper to format total seconds back to MM:SS string
-  const formatDoorOpenSeconds = (seconds: number): string => {
-    if (seconds <= 0) return "00:00";
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-  };
+        <!-- Simulation drop-down panel -->
+        <div id="settings-panel" class="absolute right-0 top-12 w-64 bg-surface-container-high border border-outline-variant/30 rounded-xl shadow-2xl p-4 space-y-3 z-50 font-mono text-xs hidden">
+          <span class="text-[10px] text-tertiary font-bold tracking-wider block border-b border-outline-variant/10 pb-1 uppercase">
+            CORES_SIMULATOR_PANEL
+          </span>
+          <div class="space-y-2">
+            <button onclick="injectAnomaly('DEFECT')" class="w-full text-left px-2 py-1.5 hover:bg-surface-container-highest rounded text-white flex justify-between items-center cursor-pointer">
+              <span>Inject DEFECT</span>
+              <span class="text-[9px] bg-secondary-container text-secondary px-1 py-0.5 rounded">CC-METRO-01</span>
+            </button>
+            <button onclick="injectAnomaly('WARNING')" class="w-full text-left px-2 py-1.5 hover:bg-surface-container-highest rounded text-white flex justify-between items-center cursor-pointer">
+              <span>Inject WARNING</span>
+              <span class="text-[9px] bg-amber-500/10 text-amber-500 px-1 py-0.5 rounded border border-amber-500/30">CC-METRO-01</span>
+            </button>
+            <button onclick="injectAnomaly('UNPLUGGED')" class="w-full text-left px-2 py-1.5 hover:bg-surface-container-highest rounded text-white flex justify-between items-center cursor-pointer">
+              <span>Inject UNPLUGGED</span>
+              <span class="text-[9px] bg-error-container/20 text-error px-1 py-0.5 rounded border border-error-container/30">CC-METRO-01</span>
+            </button>
+            <button onclick="resetSimulation()" class="w-full text-left px-2 py-1.5 hover:bg-surface-container-highest rounded text-tertiary flex items-center gap-1.5 border-t border-outline-variant/10 pt-2 cursor-pointer font-bold">
+              <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+              RESET SYSTEM METRICS
+            </button>
+          </div>
+        </div>
 
-  // Helper to get cargo commercial valuation in USD
-  const getCargoCommercialValuation = (payload: string): number => {
-    const p = payload.toUpperCase();
-    if (p.includes("VACCINE")) return 95000;
-    if (p.includes("ENZYME")) return 45000;
-    if (p.includes("REAGENT")) return 30000;
-    if (p.includes("SAMPLE") || p.includes("BIO")) return 12000;
-    return 25000;
-  };
+        <!-- Avatar Picture -->
+        <div class="w-8 h-8 rounded-full overflow-hidden border border-outline shrink-0">
+          <img class="w-full h-full object-cover" alt="Technical Operations Manager" referrerpolicy="no-referrer" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDUR5Ix45pJXKb-I-TjUixhEPmQAc_oDxjL-eQPU48UR6jd9Te0XinxZrJwDc1tNMKzHrfk1zgSVgyoiSMKUr4bISSm-UCpE958UzhRhjXmzo9HZgn2otIqQJIiqMfwx_6it3eoC3CZxTi0EGRTUtJNja5fRQkfu7RBFe9KXMVrTPIYTSnM7CitOPruPkn-m5RBjG1DJhHJZNUYwFS3qseDvv9anDeT7yCCTD65edRZ3iDJnHolIAQ3gUO4J5QF-N0nd3bU0PjVGaUV">
+        </div>
+      </div>
+    </header>
 
-  // Helper to run background rule evaluation pipeline
-  const evaluateAssetTelemetry = (asset: Asset): { status: typeof asset.status; assetValueAtRisk: number } => {
-    let status = asset.status;
+    <!-- ================= MAIN SCROLLABLE CONTENT VIEW ================= -->
+    <main class="flex-1 overflow-y-auto custom-scrollbar px-6 py-6 lg:px-8 bg-surface pb-24 md:pb-8">
+      
+      <!-- ================= TAB 1: LIVE TELEMETRY ================= -->
+      <section id="tab-content-telemetry" class="space-y-6">
+        <!-- Dashboard Subheader -->
+        <div class="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-4 border-b border-outline-variant/10 pb-5">
+          <div>
+            <h2 class="font-sans text-[26px] font-bold text-white tracking-tight">
+              Multi-Payload Cold-Chain Telemetry
+            </h2>
+            <p class="text-on-surface-variant font-sans text-xs mt-1">
+              Real-time edge node synchronization for sensitive biological and chemical assets.
+            </p>
+          </div>
 
-    if (asset.temp === null || asset.liveTemp === null || asset.gasPressure === null || asset.batteryPct === null || asset.doorOpen === "UNKNOWN") {
-      status = "UNPLUGGED";
-    } else {
-      // 1. CRYOGENIC ACCURACY: VACCINE_TYPE_B requires temperatures strictly between -90°C and -70°C. If it drifts warmer than -70°C, set status to "DEFECT".
-      if (asset.payload.toUpperCase().includes("VACCINE_TYPE_B")) {
-        if (asset.liveTemp !== null && asset.liveTemp > -70.0) {
+          <div class="flex gap-2 w-full lg:w-auto">
+            <button onclick="toggleFilters()" class="px-4 py-2 bg-surface-container-highest border border-outline-variant/30 text-white font-mono text-xs rounded flex items-center gap-2 hover:bg-surface-variant transition-colors cursor-pointer w-full lg:w-auto justify-center">
+              <i data-lucide="filter" class="w-3.5 h-3.5 text-tertiary"></i>
+              FILTER_CORES
+            </button>
+            <button onclick="exportCSVLogs()" class="px-4 py-2 bg-tertiary text-on-tertiary font-mono text-xs font-bold rounded flex items-center gap-2 hover:opacity-90 shadow-[0_0_12px_rgba(133,211,220,0.3)] transition-all cursor-pointer w-full lg:w-auto justify-center">
+              <i data-lucide="download" class="w-3.5 h-3.5"></i>
+              EXPORT_LOGS
+            </button>
+          </div>
+        </div>
+
+        <!-- Executive Financial Alert Layer -->
+        <div id="executive-alert-banner" class="bg-red-500/10 border border-red-500/45 rounded-xl p-5 font-mono text-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4 animate-pulse-red hidden">
+          <div class="flex items-start gap-3">
+            <i data-lucide="shield-alert" class="w-8 h-8 text-red-500 shrink-0 mt-0.5"></i>
+            <div>
+              <h3 class="font-bold text-red-500 uppercase tracking-widest text-sm">
+                EXECUTIVE OPERATIONAL ALERT // CRITICAL FINANCIAL EXPOSURE
+              </h3>
+              <p class="text-on-surface-variant text-[11px] font-sans mt-1">
+                Active cryogenic storage chambers are exhibiting extreme thermal or thermodynamic anomalies. Cargo integration integrity breached.
+              </p>
+              <div id="at-risk-assets-list" class="flex flex-wrap gap-2 mt-3">
+                <!-- Filled in via JS -->
+              </div>
+            </div>
+          </div>
+          <div class="bg-red-950/40 border border-red-900/50 rounded-lg p-4 text-center min-w-[200px] w-full md:w-auto">
+            <span class="text-[10px] text-red-400 block uppercase tracking-wider">TOTAL VALUE AT RISK</span>
+            <span id="at-risk-financial-sum" class="text-xl font-bold text-red-500 block mt-1">
+              $57,000 USD
+            </span>
+          </div>
+        </div>
+
+        <!-- Collapsible Search & Status Filter Bar -->
+        <div id="filter-bar" class="bg-surface-container-high border border-outline-variant/20 p-4 rounded-xl space-y-3 hidden">
+          <div class="flex flex-col lg:flex-row gap-4 justify-between">
+            <div class="space-y-1">
+              <span class="font-mono text-[10px] text-on-surface-variant block uppercase">CRYO_STATUS_FILTER</span>
+              <div class="flex flex-wrap gap-1.5 mt-1">
+                <button onclick="setStatusFilter('ALL')" id="filter-btn-ALL" class="px-3 py-1 rounded text-[10px] font-mono cursor-pointer border bg-tertiary text-on-tertiary border-tertiary">ALL</button>
+                <button onclick="setStatusFilter('SAFE')" id="filter-btn-SAFE" class="px-3 py-1 rounded text-[10px] font-mono cursor-pointer border bg-surface-container-lowest text-on-surface-variant border-outline-variant/20 hover:border-tertiary/30">SAFE</button>
+                <button onclick="setStatusFilter('WARNING')" id="filter-btn-WARNING" class="px-3 py-1 rounded text-[10px] font-mono cursor-pointer border bg-surface-container-lowest text-on-surface-variant border-outline-variant/20 hover:border-tertiary/30">WARNING</button>
+                <button onclick="setStatusFilter('DEFECT')" id="filter-btn-DEFECT" class="px-3 py-1 rounded text-[10px] font-mono cursor-pointer border bg-surface-container-lowest text-on-surface-variant border-outline-variant/20 hover:border-tertiary/30">DEFECT</button>
+                <button onclick="setStatusFilter('UNPLUGGED')" id="filter-btn-UNPLUGGED" class="px-3 py-1 rounded text-[10px] font-mono cursor-pointer border bg-surface-container-lowest text-on-surface-variant border-outline-variant/20 hover:border-tertiary/30">UNPLUGGED</button>
+              </div>
+            </div>
+            
+            <div class="space-y-1 lg:w-72">
+              <span class="font-mono text-[10px] text-on-surface-variant block uppercase">SEARCH_NODE_METADATA</span>
+              <div class="relative mt-1">
+                <i data-lucide="search" class="w-3.5 h-3.5 absolute left-2.5 top-1/2 transform -translate-y-1/2 text-on-surface-variant/40"></i>
+                <input type="text" id="search-input" oninput="handleSearch(this.value)" placeholder="Search asset, loc, payload..." class="w-full bg-surface-container-lowest border border-outline-variant/20 rounded pl-8 pr-3 py-1 text-xs font-mono text-white placeholder-on-surface-variant/30 focus:outline-none focus:border-tertiary/50">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Telemetry Data Grid Table -->
+        <div class="bg-surface-container-low border border-outline-variant/20 rounded-xl overflow-hidden shadow-2xl">
+          <div class="px-6 py-4 border-b border-outline-variant/10 bg-surface-container flex justify-between items-center">
+            <span class="font-mono text-xs text-tertiary uppercase tracking-widest font-bold block">Live Asset Fleet Telemetry</span>
+            <div class="flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-tertiary animate-pulse shadow-[0_0_6px_#85d3dc]"></span>
+              <span class="font-mono text-[10px] text-on-surface-variant uppercase font-bold">STREAMING_REALTIME</span>
+            </div>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="bg-surface-container-high/50 border-b border-outline-variant/10">
+                  <th class="px-6 py-3.5 font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Asset ID</th>
+                  <th class="px-6 py-3.5 font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Location</th>
+                  <th class="px-6 py-3.5 font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Channel</th>
+                  <th class="px-6 py-3.5 font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Payload</th>
+                  <th class="px-6 py-3.5 font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-wider text-right">Live Temp</th>
+                  <th class="px-6 py-3.5 font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-wider text-right">Door Open</th>
+                  <th class="px-6 py-3.5 font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-wider text-right">Static Hrs</th>
+                  <th class="px-6 py-3.5 font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-wider text-center">Status</th>
+                  <th class="px-6 py-3.5 font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-wider text-center font-bold text-tertiary">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="telemetry-table-body" class="divide-y divide-outline-variant/5">
+                <!-- JS dynamically builds rows -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Grid of Cards (Stability Index, Geofencing Radar Map, Latency Indicator) -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          
+          <!-- Payload Stability Index Card with Chart.js line sparkline -->
+          <div class="bg-surface-container border border-outline-variant/10 rounded-xl p-5 relative overflow-hidden group">
+            <div class="absolute inset-0 bg-gradient-to-br from-tertiary/5 to-transparent pointer-events-none"></div>
+            <div class="relative z-10 flex flex-col justify-between h-full">
+              <div class="flex justify-between items-start mb-4">
+                <span class="font-mono text-[11px] font-bold text-on-surface-variant uppercase tracking-wider">Payload Stability Index</span>
+                <i data-lucide="activity" class="w-5 h-5 text-tertiary"></i>
+              </div>
+              <div class="flex items-baseline gap-2">
+                <h3 id="stability-text" class="font-mono text-2xl font-bold text-white">99.82%</h3>
+                <span class="text-tertiary font-mono text-[10px] font-bold animate-pulse">+0.04%</span>
+              </div>
+              <!-- Real chart inside the sparkline card -->
+              <div class="mt-4 h-16 w-full relative">
+                <canvas id="sparkline-chart" class="w-full h-full"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <!-- Geofence Grid Radar Projection -->
+          <div class="bg-surface-container border border-outline-variant/10 rounded-xl p-5 relative overflow-hidden group">
+            <div class="relative z-10 h-full flex flex-col justify-between">
+              <div class="flex justify-between items-start mb-2">
+                <span class="font-mono text-[11px] font-bold text-on-surface-variant uppercase tracking-wider">Active Carrier Geofencing</span>
+                <i data-lucide="radio" class="w-4 h-4 text-tertiary animate-pulse"></i>
+              </div>
+              
+              <!-- Map Radar visualization -->
+              <div class="w-full min-h-[140px] mt-2 bg-surface-container-lowest border border-outline-variant/10 rounded relative overflow-hidden flex flex-col justify-between">
+                <div class="absolute inset-0 bg-[linear-gradient(to_right,#0f1f2e_1px,transparent_1px),linear-gradient(to_bottom,#0f1f2e_1px,transparent_1px)] bg-[size:14px_14px] opacity-40 pointer-events-none"></div>
+                <div class="absolute top-1.5 left-1.5 text-on-surface-variant/20 pointer-events-none"><i data-lucide="crosshair" class="w-3.5 h-3.5"></i></div>
+                <div class="absolute bottom-1.5 right-1.5 text-on-surface-variant/20 pointer-events-none"><i data-lucide="crosshair" class="w-3.5 h-3.5"></i></div>
+                
+                <div class="absolute top-1.5 right-1.5 px-2 py-0.5 bg-surface-container rounded border border-outline-variant/10 pointer-events-none z-10">
+                  <span class="font-mono text-[8px] text-on-surface-variant tracking-widest uppercase">RADAR_GRID_500m</span>
+                </div>
+
+                <!-- SVG Projection Map pins -->
+                <svg id="radar-svg" class="w-full h-28 relative mt-3" viewBox="0 0 100 100" preserveAspectRatio="none">
+                  <line x1="42" y1="48" x2="55" y2="25" stroke="#85d3dc" stroke-width="0.5" stroke-dasharray="1 3" class="opacity-40"></line>
+                  <line x1="42" y1="48" x2="48" y2="78" stroke="#ffb4a9" stroke-width="0.5" stroke-dasharray="1 3" class="opacity-40"></line>
+                  <line x1="48" y1="78" x2="78" y2="62" stroke="#ffb4a9" stroke-width="0.5" stroke-dasharray="1 3" class="opacity-40"></line>
+                  <g id="radar-svg-points">
+                    <!-- Loaded dynamically in JS -->
+                  </g>
+                </svg>
+
+                <div class="p-2 bg-surface-container-low border-t border-outline-variant/10 flex justify-between items-center z-10 text-[9px] font-mono">
+                  <span class="text-on-surface-variant flex items-center gap-1">
+                    <i data-lucide="map-pin" class="w-3 h-3 text-tertiary"></i>
+                    <span id="radar-locked-node-text">TRACKING_NODE: CC-CORP-12</span>
+                  </span>
+                  <span class="text-tertiary tracking-wider animate-pulse">GEOLOCK</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- System Latency Gauge -->
+          <div class="bg-surface-container border border-outline-variant/10 rounded-xl p-5 relative overflow-hidden group">
+            <div class="relative z-10 flex flex-col justify-between h-full">
+              <div class="flex justify-between items-start mb-4">
+                <span class="font-mono text-[11px] font-bold text-on-surface-variant uppercase tracking-wider">System Latency (P99)</span>
+                <i data-lucide="activity" class="w-5 h-5 text-secondary animate-pulse"></i>
+              </div>
+              <div class="flex items-baseline gap-2">
+                <h3 id="latency-text" class="font-mono text-2xl font-bold text-white">42ms</h3>
+                <span class="text-secondary font-mono text-[10px] font-bold uppercase tracking-wider">STABLE</span>
+              </div>
+              <!-- Simulated performance block rows -->
+              <div class="mt-4 flex items-center gap-1 overflow-hidden">
+                <div class="h-1 flex-1 bg-secondary rounded-full"></div>
+                <div class="h-1 flex-1 bg-secondary rounded-full"></div>
+                <div class="h-1 flex-1 bg-secondary rounded-full animate-pulse"></div>
+                <div class="h-1 flex-1 bg-secondary/20 rounded-full"></div>
+                <div class="h-1 flex-1 bg-secondary/20 rounded-full"></div>
+                <div class="h-1 flex-1 bg-secondary/20 rounded-full"></div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Real-time Event Streaming Logs -->
+        <div class="bg-surface-container-high/30 border border-outline-variant/10 rounded-xl p-6">
+          <h4 class="font-mono text-xs text-on-surface-variant font-bold mb-4 flex items-center gap-2 uppercase tracking-widest border-b border-outline-variant/10 pb-2">
+            <i data-lucide="history" class="w-4 h-4 text-tertiary"></i>
+            SYSTEM_EVENTS_LOG
+          </h4>
+          <div id="system-events-stream-logs" class="space-y-3 max-h-48 overflow-y-auto custom-scrollbar">
+            <!-- Loaded dynamically in JS -->
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= TAB 2: THERMAL ANALYTICS ================= -->
+      <section id="tab-content-thermal" class="space-y-6 hidden">
+        <div class="border-b border-outline-variant/10 pb-5">
+          <h2 class="font-sans text-[26px] font-bold text-white tracking-tight">Thermal Analytics Engine</h2>
+          <p class="text-on-surface-variant font-sans text-xs mt-1">Multi-chambers historical temperature charts & thresholds diagnostics.</p>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          <!-- Stats card: Highest temp -->
+          <div class="bg-surface-container border border-outline-variant/10 rounded-xl p-4 font-mono text-xs">
+            <span class="text-on-surface-variant uppercase tracking-wider block">MAX TEMPERATURE EXPOSURE</span>
+            <span class="text-xl font-bold text-red-500 block mt-2">12.3°C</span>
+            <span class="text-[9px] text-on-surface-variant/60 block mt-1">Reported on node CC-CORP-12</span>
+          </div>
+          <!-- Stats card: Limit violations -->
+          <div class="bg-surface-container border border-outline-variant/10 rounded-xl p-4 font-mono text-xs">
+            <span class="text-on-surface-variant uppercase tracking-wider block">CRYOGENIC BOUNDARY ERRORS</span>
+            <span class="text-xl font-bold text-amber-500 block mt-2">1 Drift Warning</span>
+            <span class="text-[9px] text-on-surface-variant/60 block mt-1">CC-CAMP-05 in caution band</span>
+          </div>
+          <!-- Stats card: Vacuum Seal status -->
+          <div class="bg-surface-container border border-outline-variant/10 rounded-xl p-4 font-mono text-xs">
+            <span class="text-on-surface-variant uppercase tracking-wider block">GASKET VACUUM INTEGRITY</span>
+            <span class="text-xl font-bold text-tertiary block mt-2">99.12%</span>
+            <span class="text-[9px] text-on-surface-variant/60 block mt-1">Pneumatic lock verified</span>
+          </div>
+          <!-- Stats card: Average temperature -->
+          <div class="bg-surface-container border border-outline-variant/10 rounded-xl p-4 font-mono text-xs">
+            <span class="text-on-surface-variant uppercase tracking-wider block">AVERAGE SYSTEM RANGE</span>
+            <span class="text-xl font-bold text-white block mt-2">-43.7°C</span>
+            <span class="text-[9px] text-on-surface-variant/60 block mt-1">Combined fleet matrix baseline</span>
+          </div>
+        </div>
+
+        <!-- Main Chart Container -->
+        <div class="bg-surface-container-low border border-outline-variant/20 rounded-xl p-6 shadow-2xl">
+          <div class="flex justify-between items-center border-b border-outline-variant/10 pb-4 mb-4 font-mono text-xs">
+            <span class="font-bold text-tertiary uppercase tracking-widest">TEMPORAL DRIFT TRACING MONITOR (CHART.JS)</span>
+            <div class="flex gap-4 text-on-surface-variant text-[10px]">
+              <span class="flex items-center gap-1.5"><span class="w-2.5 h-1 bg-[#85d3dc]"></span>CC-METRO-01</span>
+              <span class="flex items-center gap-1.5"><span class="w-2.5 h-1 bg-[#ffb4a9]"></span>CC-CORP-12</span>
+              <span class="flex items-center gap-1.5"><span class="w-2.5 h-1 bg-[#f59e0b]"></span>CC-CAMP-05</span>
+            </div>
+          </div>
+          <div class="h-80 w-full relative">
+            <canvas id="thermal-analytics-main-chart"></canvas>
+          </div>
+          <div class="mt-4 p-3 bg-[#051424] rounded-lg border border-outline-variant/10 text-[10px] font-mono text-on-surface-variant leading-relaxed">
+            <strong>CRYOGENIC TARGET RANGE:</strong> VACCINE_TYPE_B requires target core parameters between <strong>-90.0°C</strong> and <strong>-70.0°C</strong>. Drift analysis warns operations managers upon breach of the -70°C barrier for any Vaccine shipment node, marking as defective immediately.
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= TAB 3: ASSET FLEET ================= -->
+      <section id="tab-content-fleet" class="space-y-6 hidden">
+        <div class="border-b border-outline-variant/10 pb-5">
+          <h2 class="font-sans text-[26px] font-bold text-white tracking-tight">Asset Fleet Commissioning</h2>
+          <p class="text-on-surface-variant font-sans text-xs mt-1">Register and deploy new cryogenic node sensor arrays to the EdgeCold system network.</p>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          
+          <!-- Register asset form -->
+          <div class="bg-surface-container border border-outline-variant/20 rounded-xl p-6 shadow-xl lg:col-span-1 h-fit">
+            <h3 class="font-mono text-xs text-tertiary font-bold tracking-widest uppercase border-b border-outline-variant/10 pb-2 mb-4">
+              COMMISSION NEW CRYOGENIC NODE
+            </h3>
+            
+            <form id="add-asset-form" onsubmit="handleAddAssetSubmit(event)" class="space-y-4 font-mono text-xs text-on-surface-variant">
+              <div class="space-y-1">
+                <label class="block text-on-surface-variant uppercase tracking-wider">Node ID</label>
+                <input type="text" id="form-asset-id" required placeholder="e.g. CC-METRO-02" class="w-full bg-surface-container-lowest border border-outline-variant/20 rounded px-3 py-2 text-white focus:outline-none focus:border-tertiary/50">
+              </div>
+
+              <div class="space-y-1">
+                <label class="block text-on-surface-variant uppercase tracking-wider">Operational Location</label>
+                <input type="text" id="form-asset-location" required placeholder="e.g. Frankfurt Hub B" class="w-full bg-surface-container-lowest border border-outline-variant/20 rounded px-3 py-2 text-white focus:outline-none focus:border-tertiary/50">
+              </div>
+
+              <div class="space-y-1">
+                <label class="block text-on-surface-variant uppercase tracking-wider">Channel / Network</label>
+                <select id="form-asset-channel" class="w-full bg-surface-container-lowest border border-outline-variant/20 rounded px-3 py-2 text-white focus:outline-none focus:border-tertiary/50">
+                  <option value="Internal_Fleet">Internal Fleet Carrier</option>
+                  <option value="Retail_Partner">Retail Partner Hub</option>
+                  <option value="Logistics_Contract">Third-Party Logistics Contract</option>
+                  <option value="Third_Party">Third-Party Edge</option>
+                </select>
+              </div>
+
+              <div class="space-y-1">
+                <label class="block text-on-surface-variant uppercase tracking-wider">Cargo Payload Description</label>
+                <input type="text" id="form-asset-payload" required placeholder="e.g. VACCINE_TYPE_B" class="w-full bg-surface-container-lowest border border-outline-variant/20 rounded px-3 py-2 text-white focus:outline-none focus:border-tertiary/50">
+              </div>
+
+              <div class="space-y-1">
+                <label class="block text-on-surface-variant uppercase tracking-wider">Baseline Core Temp (°C)</label>
+                <input type="number" step="0.1" id="form-asset-temp" required value="-78.5" class="w-full bg-surface-container-lowest border border-outline-variant/20 rounded px-3 py-2 text-white focus:outline-none focus:border-tertiary/50">
+              </div>
+
+              <div class="space-y-1">
+                <label class="block text-on-surface-variant uppercase tracking-wider">Initial Pressure (bar)</label>
+                <input type="number" step="0.01" id="form-asset-pressure" required value="1.15" class="w-full bg-surface-container-lowest border border-outline-variant/20 rounded px-3 py-2 text-white focus:outline-none focus:border-tertiary/50">
+              </div>
+
+              <div class="space-y-1">
+                <label class="block text-on-surface-variant uppercase tracking-wider">Initial Battery (%)</label>
+                <input type="number" min="0" max="100" id="form-asset-battery" required value="95" class="w-full bg-surface-container-lowest border border-outline-variant/20 rounded px-3 py-2 text-white focus:outline-none focus:border-tertiary/50">
+              </div>
+
+              <button type="submit" class="w-full py-2.5 bg-tertiary text-on-tertiary font-bold tracking-widest uppercase rounded hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer">
+                LAUNCH NODE ONLINE
+              </button>
+            </form>
+          </div>
+
+          <!-- Existing Fleet list -->
+          <div class="bg-surface-container-low border border-outline-variant/20 rounded-xl p-6 shadow-xl lg:col-span-2">
+            <h3 class="font-mono text-xs text-on-surface-variant font-bold tracking-widest uppercase border-b border-outline-variant/10 pb-2 mb-4">
+              ACTIVE COMMISSIONS LIST
+            </h3>
+            
+            <div class="overflow-x-auto">
+              <table class="w-full text-left border-collapse text-xs font-mono">
+                <thead>
+                  <tr class="border-b border-outline-variant/15 text-on-surface-variant/60">
+                    <th class="py-2.5">Asset ID</th>
+                    <th class="py-2.5">Location</th>
+                    <th class="py-2.5">Payload</th>
+                    <th class="py-2.5 text-right">Battery</th>
+                    <th class="py-2.5 text-right">Pressure</th>
+                    <th class="py-2.5 text-center">Status</th>
+                  </tr>
+                </thead>
+                <tbody id="fleet-inventory-table-body" class="divide-y divide-outline-variant/5 text-white">
+                  <!-- Filled in JS -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ================= TAB 4: DISPATCH LOGS ================= -->
+      <section id="tab-content-dispatch" class="space-y-6 hidden">
+        <div class="border-b border-outline-variant/10 pb-5">
+          <h2 class="font-sans text-[26px] font-bold text-white tracking-tight">Predictive AI Restocks & Dispatches</h2>
+          <p class="text-on-surface-variant font-sans text-xs mt-1">Intercepting cold-chain defects via automated drone logistics corridors.</p>
+        </div>
+
+        <div class="bg-surface-container-low border border-outline-variant/20 rounded-xl overflow-hidden shadow-2xl">
+          <div class="px-6 py-4 border-b border-outline-variant/10 bg-surface-container flex justify-between items-center font-mono text-xs">
+            <span class="font-bold text-tertiary uppercase tracking-widest">ACTIVE PREDICTIVE AIR DISPATCH RUNS</span>
+            <span id="dispatch-count-badge" class="bg-surface-container-highest border border-outline-variant/10 px-2.5 py-0.5 rounded text-white">0 ACTIVE DISPATCHES</span>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-xs font-mono">
+              <thead>
+                <tr class="bg-surface-container-high/50 border-b border-outline-variant/10 text-on-surface-variant/70">
+                  <th class="px-6 py-3.5">Run ID</th>
+                  <th class="px-6 py-3.5">Target Node</th>
+                  <th class="px-6 py-3.5">Timestamp</th>
+                  <th class="px-6 py-3.5">Payload Cargo</th>
+                  <th class="px-6 py-3.5">Assigned Air Corridor</th>
+                  <th class="px-6 py-3.5 text-right">Est. Resolution</th>
+                  <th class="px-6 py-3.5 text-center">Flight Status</th>
+                  <th class="px-6 py-3.5 text-center">Resolution Action</th>
+                </tr>
+              </thead>
+              <tbody id="dispatch-table-body" class="divide-y divide-outline-variant/5 text-white">
+                <!-- JS dynamically loads rows -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- ================= FLOATING ACTION ASSISTANT BOT ================= -->
+    <div id="chatbot-button" onclick="toggleChatbot()" class="fixed bottom-6 right-6 w-12 h-12 bg-tertiary text-on-tertiary rounded-full shadow-[0_4px_24px_rgba(133,211,220,0.4)] flex items-center justify-center cursor-pointer hover:scale-105 active:scale-95 duration-150 z-50">
+      <i data-lucide="message-square" class="w-5 h-5"></i>
+    </div>
+
+    <!-- Chatbot Popup overlay -->
+    <div id="chatbot-panel" class="fixed bottom-20 right-6 w-80 md:w-96 h-[450px] bg-surface-container border border-outline-variant/30 rounded-2xl shadow-2xl flex flex-col z-50 hidden">
+      <!-- Chat header -->
+      <div class="p-4 bg-surface-container-high border-b border-outline-variant/10 flex justify-between items-center rounded-t-2xl">
+        <div class="flex items-center gap-2">
+          <i data-lucide="radio" class="w-4 h-4 text-tertiary animate-pulse"></i>
+          <span class="font-mono text-xs font-bold text-white uppercase">EDGE_COLD // AI_CORE</span>
+        </div>
+        <button onclick="toggleChatbot()" class="p-1 hover:bg-surface-variant/40 rounded text-on-surface-variant hover:text-white">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <!-- Chat messages -->
+      <div id="chat-messages-container" class="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4 text-xs font-sans">
+        <div class="flex gap-2.5">
+          <div class="w-6 h-6 rounded-full bg-tertiary/10 border border-tertiary/40 flex items-center justify-center shrink-0">
+            <i data-lucide="bot" class="w-3.5 h-3.5 text-tertiary"></i>
+          </div>
+          <div class="bg-surface-container-highest rounded-lg p-3 text-on-surface-variant leading-relaxed max-w-[85%]">
+            <p class="font-bold font-mono text-[10px] text-tertiary mb-1 uppercase tracking-wider">AI_CONTROLLER</p>
+            System handshake complete. Operations manager authenticated. I can run full diagnostic queries on the active cold-chain nodes. What is your query?
+          </div>
+        </div>
+      </div>
+
+      <!-- Chat input form -->
+      <form onsubmit="handleSendMessage(event)" class="p-3 border-t border-outline-variant/10 bg-surface-container-high rounded-b-2xl flex gap-2">
+        <input type="text" id="chat-input-field" placeholder="Ask AI: 'Identify high risk nodes'..." class="flex-1 bg-surface-container-lowest border border-outline-variant/20 rounded-xl px-3 py-2 text-xs text-white placeholder-on-surface-variant/30 focus:outline-none focus:border-tertiary/50 font-mono">
+        <button type="submit" class="p-2.5 bg-tertiary text-on-tertiary rounded-xl hover:opacity-90 active:scale-95 duration-100 shrink-0">
+          <i data-lucide="send" class="w-4 h-4"></i>
+        </button>
+      </form>
+    </div>
+
+  </div>
+
+  <!-- ================= PREDICTIVE DISPATCH MODAL ================= -->
+  <div id="dispatch-modal" class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 hidden">
+    <div class="bg-surface-container border border-outline-variant/30 max-w-lg w-full rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200">
+      
+      <!-- Modal Header -->
+      <div class="p-4 bg-surface-container-high border-b border-outline-variant/15 flex justify-between items-center">
+        <div class="flex items-center gap-2">
+          <i data-lucide="shield-alert" class="w-5 h-5 text-red-500 shrink-0 animate-bounce"></i>
+          <span class="font-mono text-xs font-bold text-red-500 tracking-wider uppercase">PREDICTIVE AI DISPATCH PROTOCOL</span>
+        </div>
+        <button onclick="closeDispatchModal()" class="p-1 hover:bg-surface-variant/40 rounded text-on-surface-variant hover:text-white">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <!-- Modal Body -->
+      <div class="p-6 space-y-4 font-mono text-xs text-on-surface-variant">
+        
+        <!-- Simulation Analyzing Screen -->
+        <div id="modal-analyzing" class="text-center py-8 space-y-4">
+          <div class="inline-block relative w-12 h-12">
+            <div class="absolute inset-0 border-2 border-red-500/25 rounded-full"></div>
+            <div class="absolute inset-0 border-t-2 border-red-500 rounded-full animate-spin"></div>
+          </div>
+          <p class="text-[11px] uppercase tracking-widest text-red-400 animate-pulse">QUERYING GEMINI LLM DECISION CORES...</p>
+        </div>
+
+        <!-- Dynamic Gemini Analysis Results (Hidden by default, shown via JS) -->
+        <div id="modal-results" class="space-y-4 hidden">
+          <div class="bg-red-500/5 border border-red-500/20 rounded-lg p-3 space-y-2">
+            <span class="text-[10px] text-red-400 font-bold block uppercase tracking-wider">incident diagnostics</span>
+            <p id="modal-result-diag" class="text-white text-xs leading-relaxed font-sans font-medium">Thermal leak. Vacuum seal integrity breached.</p>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div class="bg-[#051424] p-3 rounded-lg border border-outline-variant/10">
+              <span class="text-[9px] text-on-surface-variant/50 block uppercase">predicted route</span>
+              <p id="modal-result-route" class="text-white font-bold text-xs mt-1">Direct Corridor 12-B</p>
+            </div>
+            <div class="bg-[#051424] p-3 rounded-lg border border-outline-variant/10">
+              <span class="text-[9px] text-on-surface-variant/50 block uppercase">target SLA</span>
+              <p id="modal-result-resolution" class="text-white font-bold text-xs mt-1">4 min</p>
+            </div>
+          </div>
+
+          <div class="bg-[#051424] p-3 rounded-lg border border-outline-variant/10 space-y-1">
+            <span class="text-[9px] text-tertiary block uppercase tracking-wider font-bold">Mitigation Recommendation</span>
+            <p id="modal-result-rec" class="text-white text-xs leading-relaxed font-sans">Deploy replacement stock immediately via tactical logistics drones.</p>
+          </div>
+
+          <div class="border-t border-outline-variant/10 pt-4 flex gap-2 justify-end">
+            <button onclick="closeDispatchModal()" class="px-4 py-2 bg-surface-container-highest border border-outline-variant/30 rounded text-white hover:bg-surface-variant cursor-pointer transition-colors uppercase text-[11px]">Cancel</button>
+            <button onclick="confirmPredictiveDispatch()" class="px-4 py-2 bg-[#F40009] text-white rounded font-bold hover:opacity-90 cursor-pointer transition-opacity uppercase text-[11px] shadow-[0_0_12px_rgba(244,0,9,0.4)]">Authorize Restock Dispatch</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= TOAST OVERLAY LAYER ================= -->
+  <div id="toast-container" class="fixed bottom-6 left-6 md:left-auto md:right-8 z-[120] flex flex-col gap-3 pointer-events-none max-w-sm w-full">
+    <!-- Dynamic toasts injected by JS -->
+  </div>
+
+  <!-- ================= MAIN JS STATE CONTROLLER ================= -->
+  <script>
+    // Global state arrays
+    let assets = [
+      {
+        id: "CC-METRO-01",
+        location: "Berlin Hub A-4",
+        channel: "Retail_Partner",
+        payload: "VACCINE_TYPE_B",
+        temp: -80.8,
+        liveTemp: -80.8,
+        doorOpen: "00:00",
+        staticHrs: 22.8,
+        gasPressure: 1.24,
+        batteryPct: 98,
+        status: "SAFE",
+        assetValueAtRisk: 0,
+        history: [-80.1, -80.3, -80.5, -80.6, -80.8, -80.8, -80.7, -80.8, -80.8, -80.8],
+      },
+      {
+        id: "CC-CORP-12",
+        location: "Transit_Route_22",
+        channel: "Internal_Fleet",
+        payload: "ENZYME_ALPHA",
+        temp: 12.3,
+        liveTemp: 12.3,
+        doorOpen: "04:15",
+        staticHrs: 21.6,
+        gasPressure: 0.31,
+        batteryPct: 14,
+        status: "DEFECT",
+        assetValueAtRisk: 45000,
+        history: [-5.0, -1.0, 2.3, 5.8, 8.1, 10.4, 11.5, 12.1, 12.3, 12.3],
+      },
+      {
+        id: "CC-CAMP-05",
+        location: "Munich South-West",
+        channel: "Logistics_Contract",
+        payload: "REAGENT_GAMMA",
+        temp: -62.6,
+        liveTemp: -62.6,
+        doorOpen: "00:12",
+        staticHrs: 64.2,
+        gasPressure: 1.08,
+        batteryPct: 82,
+        status: "WARNING",
+        assetValueAtRisk: 0,
+        history: [-65.5, -65.0, -64.8, -64.2, -63.9, -63.5, -63.1, -62.8, -62.7, -62.6],
+      },
+      {
+        id: "CC-RETAIL-09",
+        location: "Store_Front_882",
+        channel: "Third_Party",
+        payload: "BIO_SAMPLE_Z",
+        temp: null,
+        liveTemp: null,
+        doorOpen: "UNKNOWN",
+        staticHrs: 0.1,
+        gasPressure: null,
+        batteryPct: null,
+        status: "UNPLUGGED",
+        assetValueAtRisk: 12000,
+        history: [null, null, null, null, null, null, null, null, null, null],
+      },
+    ];
+
+    const MAP_COORDINATES = {
+      "CC-METRO-01": { x: 55, y: 25 },
+      "CC-CORP-12": { x: 42, y: 48 },
+      "CC-CAMP-05": { x: 48, y: 78 },
+      "CC-RETAIL-09": { x: 78, y: 62 },
+    };
+
+    let logs = [
+      {
+        id: "log-1",
+        timestamp: "14:02:11",
+        node: "NODE_ALPHA_04",
+        message: "connected successfully. Handshake latency: 12ms.",
+        type: "info",
+      },
+      {
+        id: "log-2",
+        timestamp: "13:58:44",
+        node: "ALERT_THERMAL_DRIFT",
+        message: "detected at CC-CORP-12. External temp 32°C.",
+        type: "warn",
+      },
+      {
+        id: "log-3",
+        timestamp: "13:50:02",
+        node: "SYSTEM_CALIBRATION",
+        message: "Fleet-wide calibration complete. 482 sensors verified.",
+        type: "success",
+      },
+    ];
+
+    let dispatchRuns = [];
+    let currentTab = "telemetry";
+    let statusFilter = "ALL";
+    let searchQuery = "";
+    let selectedAssetId = "CC-CORP-12";
+    let dispatchModalAsset = null;
+    let geminiAnalysisResponse = null;
+
+    // Charts references
+    let sparklineChartInstance = null;
+    let mainThermalChartInstance = null;
+
+    // Run setup on load
+    window.addEventListener("DOMContentLoaded", () => {
+      lucide.createIcons();
+      initSparklineChart();
+      renderAll();
+      startSimulationLoop();
+    });
+
+    // Helper functions
+    function parseDoorOpenSeconds(str) {
+      if (!str || str === "UNKNOWN" || str === "00:00") return 0;
+      const parts = str.split(":");
+      if (parts.length !== 2) return 0;
+      const mins = parseInt(parts[0], 10) || 0;
+      const secs = parseInt(parts[1], 10) || 0;
+      return mins * 60 + secs;
+    }
+
+    function formatDoorOpenSeconds(seconds) {
+      if (seconds <= 0) return "00:00";
+      const mins = Math.floor(seconds / 60);
+      const secs = seconds % 60;
+      return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+    }
+
+    function getCargoCommercialValuation(payload) {
+      const p = payload.toUpperCase();
+      if (p.includes("VACCINE")) return 95000;
+      if (p.includes("ENZYME")) return 45000;
+      if (p.includes("REAGENT")) return 30000;
+      if (p.includes("SAMPLE") || p.includes("BIO")) return 12000;
+      return 25000;
+    }
+
+    function evaluateAssetTelemetry(asset) {
+      let status = asset.status;
+      if (asset.temp === null || asset.liveTemp === null || asset.gasPressure === null || asset.batteryPct === null || asset.doorOpen === "UNKNOWN") {
+        status = "UNPLUGGED";
+      } else {
+        // Vaccine check
+        if (asset.payload.toUpperCase().includes("VACCINE_TYPE_B")) {
+          if (asset.liveTemp !== null && asset.liveTemp > -70.0) {
+            status = "DEFECT";
+          } else if (asset.liveTemp !== null && (asset.liveTemp > -72.0 || asset.liveTemp < -90.0)) {
+            status = "WARNING";
+          } else {
+            status = "SAFE";
+          }
+        }
+        // Door Open threshold check
+        const doorSeconds = parseDoorOpenSeconds(asset.doorOpen);
+        if (doorSeconds > 180 && asset.staticHrs > 10) {
           status = "DEFECT";
-        } else if (asset.liveTemp !== null && (asset.liveTemp > -72.0 || asset.liveTemp < -90.0)) {
-          status = "WARNING";
-        } else {
-          status = "SAFE";
+        }
+        // Fail-safe threshold check
+        if (asset.batteryPct !== null && asset.batteryPct < 20 && asset.gasPressure !== null && asset.gasPressure < 0.50) {
+          status = "DEFECT";
         }
       }
 
-      // 2. THERMODYNAMIC CROSS-METRIC DEPENDENCY: IF DoorOpen > "03:00" AND StaticHrs > 10, accelerate warning directly to "DEFECT" regardless of temperature
-      const doorSeconds = parseDoorOpenSeconds(asset.doorOpen);
-      if (doorSeconds > 180 && asset.staticHrs > 10) {
-        status = "DEFECT";
+      let assetValueAtRisk = 0;
+      if (status === "DEFECT" || status === "UNPLUGGED") {
+        assetValueAtRisk = getCargoCommercialValuation(asset.payload);
       }
-
-      // 3. PREDICTIVE FAIL-SAFE: IF BatteryPct < 20% AND GasPressure < 0.50 bar, flag status as "DEFECT" even if LiveTemp is currently nominal
-      if (asset.batteryPct !== null && asset.batteryPct < 20 && asset.gasPressure !== null && asset.gasPressure < 0.50) {
-        status = "DEFECT";
-      }
+      return { status, assetValueAtRisk };
     }
 
-    // Set AssetValueAtRisk dynamically to commercial valuation if DEFECT or UNPLUGGED
-    let assetValueAtRisk = 0;
-    if (status === "DEFECT" || status === "UNPLUGGED") {
-      assetValueAtRisk = getCargoCommercialValuation(asset.payload);
+    // Tab switching controller
+    function switchTab(tabId) {
+      currentTab = tabId;
+      
+      // Update sidebar tab styling
+      const tabsList = ["telemetry", "thermal", "fleet", "dispatch"];
+      tabsList.forEach(t => {
+        const btn = document.getElementById(`nav-${t}`);
+        const content = document.getElementById(`tab-content-${t}`);
+        if (t === tabId) {
+          btn.className = "w-full flex items-center justify-between px-4 py-3 rounded-xl font-mono text-xs font-bold tracking-wider transition-all duration-150 bg-tertiary-container/30 text-tertiary border-l-2 border-tertiary";
+          content.classList.remove("hidden");
+        } else {
+          btn.className = "w-full flex items-center justify-between px-4 py-3 rounded-xl font-mono text-xs font-bold tracking-wider transition-all duration-150 text-on-surface-variant/70 hover:bg-surface-variant/20 hover:text-white";
+          content.classList.add("hidden");
+        }
+      });
+
+      // Handle specific chart loading upon tab select
+      if (tabId === "thermal") {
+        setTimeout(initMainThermalChart, 50);
+      }
+
+      lucide.createIcons();
     }
 
-    return { status, assetValueAtRisk };
-  };
+    // Simulation loop
+    let stabilityIndex = 99.82;
+    let latencyValue = 42;
+    let stabilityHistory = [99.78, 99.80, 99.81, 99.82, 99.82, 99.83, 99.82, 99.82, 99.84, 99.82];
 
-  // Simulation Loop: fluctuate temperatures and trigger slight static hours increments
-  useEffect(() => {
-    const timer = setInterval(() => {
-      // Fluctuate stability metric
-      setStabilityIndex((prev) => {
-        const delta = (Math.random() - 0.5) * 0.02;
-        return Number(Math.min(100, Math.max(98, prev + delta)).toFixed(2));
-      });
+    function startSimulationLoop() {
+      setInterval(() => {
+        // Fluctuate stability metric
+        const stabilityDelta = (Math.random() - 0.5) * 0.02;
+        stabilityIndex = Number(Math.min(100, Math.max(98, stabilityIndex + stabilityDelta)).toFixed(2));
+        document.getElementById("stability-text").innerText = `${stabilityIndex}%`;
 
-      // Fluctuate latency
-      setLatency((prev) => {
-        const delta = Math.floor((Math.random() - 0.5) * 4);
-        return Math.min(60, Math.max(35, prev + delta));
-      });
+        stabilityHistory.push(stabilityIndex);
+        if (stabilityHistory.length > 10) stabilityHistory.shift();
+        if (sparklineChartInstance) {
+          sparklineChartInstance.data.datasets[0].data = [...stabilityHistory];
+          sparklineChartInstance.update('none');
+        }
 
-      setAssets((prev) =>
-        prev.map((asset) => {
-          const updatedAsset = { ...asset };
+        // Fluctuate latency
+        const latencyDelta = Math.floor((Math.random() - 0.5) * 4);
+        latencyValue = Math.min(60, Math.max(35, latencyValue + latencyDelta));
+        document.getElementById("latency-text").innerText = `${latencyValue}ms`;
 
-          // Update door open seconds slightly if it is currently open
-          if (updatedAsset.doorOpen !== "00:00" && updatedAsset.doorOpen !== "UNKNOWN") {
-            const currentSecs = parseDoorOpenSeconds(updatedAsset.doorOpen);
-            // Simulating 5 seconds passing
-            updatedAsset.doorOpen = formatDoorOpenSeconds(currentSecs + 5);
+        // Update all assets
+        assets = assets.map(asset => {
+          const updated = { ...asset };
+          
+          if (updated.doorOpen !== "00:00" && updated.doorOpen !== "UNKNOWN") {
+            const currentSecs = parseDoorOpenSeconds(updated.doorOpen);
+            updated.doorOpen = formatDoorOpenSeconds(currentSecs + 5);
           }
+          
+          updated.staticHrs = Number((updated.staticHrs + 0.1).toFixed(1));
 
-          // Increment static hours slightly
-          updatedAsset.staticHrs = Number((updatedAsset.staticHrs + 0.1).toFixed(1));
-
-          // Fluctuate temperature if it's not null (N/A)
-          if (updatedAsset.temp !== null && updatedAsset.liveTemp !== null) {
+          if (updated.temp !== null && updated.liveTemp !== null) {
             let fluctuation = (Math.random() - 0.5) * 0.25;
-            // Let it drift in a realistic manner based on current status
-            if (updatedAsset.status === "WARNING") {
+            if (updated.status === "WARNING") {
               fluctuation += 0.08;
-            } else if (updatedAsset.status === "DEFECT") {
+            } else if (updated.status === "DEFECT") {
               fluctuation += 0.18;
             }
-            updatedAsset.temp = Number((updatedAsset.temp + fluctuation).toFixed(1));
-            updatedAsset.liveTemp = updatedAsset.temp;
-            updatedAsset.history = updatedAsset.history ? [...updatedAsset.history.slice(1), updatedAsset.temp] : [updatedAsset.temp];
+            updated.temp = Number((updated.temp + fluctuation).toFixed(1));
+            updated.liveTemp = updated.temp;
+            if (updated.history) {
+              updated.history.push(updated.temp);
+              if (updated.history.length > 10) updated.history.shift();
+            }
           }
 
-          // Fluctuate gas pressure and battery slightly
-          if (updatedAsset.gasPressure !== null) {
+          if (updated.gasPressure !== null) {
             let pressureChange = (Math.random() - 0.5) * 0.02;
-            if (updatedAsset.status === "DEFECT" || updatedAsset.status === "WARNING") {
-              pressureChange -= 0.01; // progressive leak simulation
+            if (updated.status === "DEFECT" || updated.status === "WARNING") {
+              pressureChange -= 0.01;
             }
-            updatedAsset.gasPressure = Number(Math.max(0, updatedAsset.gasPressure + pressureChange).toFixed(2));
+            updated.gasPressure = Number(Math.max(0, updated.gasPressure + pressureChange).toFixed(2));
           }
 
-          if (updatedAsset.batteryPct !== null) {
+          if (updated.batteryPct !== null) {
             let batteryChange = Math.random() > 0.75 ? -1 : 0;
-            if (updatedAsset.status === "DEFECT") {
-              batteryChange = -1; // faster drain under error
+            if (updated.status === "DEFECT") {
+              batteryChange = -1;
             }
-            updatedAsset.batteryPct = Math.max(0, updatedAsset.batteryPct + batteryChange);
+            updated.batteryPct = Math.max(0, updated.batteryPct + batteryChange);
           }
 
-          // Run background rule evaluation pipeline
-          const { status, assetValueAtRisk } = evaluateAssetTelemetry(updatedAsset);
-          updatedAsset.status = status;
-          updatedAsset.assetValueAtRisk = assetValueAtRisk;
+          const { status, assetValueAtRisk } = evaluateAssetTelemetry(updated);
+          updated.status = status;
+          updated.assetValueAtRisk = assetValueAtRisk;
 
-          return updatedAsset;
-        })
-      );
-    }, 4000);
+          return updated;
+        });
 
-    return () => clearInterval(timer);
-  }, []);
+        // Add telemetry noise streaming logs occasionally
+        if (Math.random() > 0.7) {
+          const safeAssets = assets.filter(a => a.status === "SAFE");
+          if (safeAssets.length > 0) {
+            const randomA = safeAssets[Math.floor(Math.random() * safeAssets.length)];
+            const messages = [
+              "verified cryogenic loop handshake latency: 11ms.",
+              "vacuum lock seal calibration verified. Status: NOMINAL.",
+              "transmitted telemetry block payload signature to dispatch gateway.",
+              "sensor telemetry packet synchronized. Gasket compression: 94%.",
+            ];
+            const timestamp = new Date().toLocaleTimeString("en-US", { hour12: false });
+            logs.unshift({
+              id: `log-${Date.now()}`,
+              timestamp,
+              node: randomA.id,
+              message: messages[Math.floor(Math.random() * messages.length)],
+              type: "info"
+            });
+            if (logs.length > 15) logs.pop();
+          }
+        }
 
-  // Streaming log simulations
-  useEffect(() => {
-    const logInterval = setInterval(() => {
-      const liveAssets = assets.filter((a) => a.status === "SAFE");
-      if (liveAssets.length === 0) return;
-      const randomAsset = liveAssets[Math.floor(Math.random() * liveAssets.length)];
+        renderAll();
+      }, 4000);
+    }
 
-      const messages = [
-        `verified cryogenic loop handshake latency: ${Math.floor(Math.random() * 8) + 10}ms.`,
-        `vacuum lock seal calibration verified. Status: NOMINAL.`,
-        `transmitted telemetry block payload signature to dispatch gateway.`,
-        `sensor telemetry packet synchronized. Gasket compression: 94%.`,
-      ];
+    // Render functions for tables, cards, and coordinates
+    function renderAll() {
+      // Counters
+      const defectCount = assets.filter(a => a.status === "DEFECT").length;
+      const unpluggedCount = assets.filter(a => a.status === "UNPLUGGED").length;
+      
+      document.getElementById("top-total-assets").innerText = assets.length;
+      document.getElementById("badge-telemetry-total").innerText = assets.length;
+      
+      document.getElementById("top-defect-count").innerText = defectCount;
+      const defDot = document.getElementById("top-critical-dot");
+      if (defectCount > 0) {
+        defDot.className = "w-2 h-2 rounded-full bg-secondary shadow-[0_0_8px_rgba(255,180,169,0.8)] animate-pulse";
+      } else {
+        defDot.className = "w-2 h-2 rounded-full bg-outline";
+      }
 
-      const newLog: LogEntry = {
-        id: `log-${Date.now()}`,
-        timestamp: new Date().toLocaleTimeString("en-US", { hour12: false }),
-        node: randomAsset.id,
-        message: messages[Math.floor(Math.random() * messages.length)],
-        type: "info",
-      };
+      document.getElementById("top-unplugged-count").innerText = unpluggedCount;
+      const unDot = document.getElementById("top-disconnected-dot");
+      if (unpluggedCount > 0) {
+        unDot.className = "w-2 h-2 rounded-full bg-error shadow-[0_0_8px_rgba(255,180,171,0.8)] animate-ping";
+      } else {
+        unDot.className = "w-2 h-2 rounded-full bg-outline";
+      }
 
-      setLogs((prev) => [newLog, ...prev.slice(0, 8)]);
-    }, 12000);
+      // Financial Alert Layer
+      const atRiskAssets = assets.filter(a => a.status === "DEFECT" || a.status === "UNPLUGGED");
+      const totalValueAtRisk = atRiskAssets.reduce((sum, a) => sum + (a.assetValueAtRisk || 0), 0);
+      const alertBanner = document.getElementById("executive-alert-banner");
+      
+      if (atRiskAssets.length > 0) {
+        alertBanner.classList.remove("hidden");
+        document.getElementById("at-risk-financial-sum").innerText = `$${totalValueAtRisk.toLocaleString()} USD`;
+        
+        const listHTML = atRiskAssets.map(a => `
+          <span class="bg-red-950/40 text-red-400 px-2.5 py-1 rounded border border-red-900/50 text-[10px]">
+            <strong>${a.id}</strong>: $${a.assetValueAtRisk.toLocaleString()} USD Risk (${a.status})
+          </span>
+        `).join("");
+        document.getElementById("at-risk-assets-list").innerHTML = listHTML;
+      } else {
+        alertBanner.classList.add("hidden");
+      }
 
-    return () => clearInterval(logInterval);
-  }, [assets]);
+      // Telemetry table rows (reactive to filtering and search query)
+      const tableBody = document.getElementById("telemetry-table-body");
+      const filtered = assets.filter(asset => {
+        const query = searchQuery.toLowerCase();
+        const matchesSearch = asset.id.toLowerCase().includes(query) || asset.location.toLowerCase().includes(query) || asset.payload.toLowerCase().includes(query);
+        const matchesStatus = statusFilter === "ALL" || asset.status === statusFilter;
+        return matchesSearch && matchesStatus;
+      });
 
-  // Handle addition of a newly registered asset
-  const handleAddAsset = (newAsset: Asset) => {
-    setAssets((prev) => [...prev, newAsset]);
-    addToast("NODE_COMMISSIONED", `Asset ${newAsset.id} online and streaming telemetry successfully.`);
+      if (filtered.length === 0) {
+        tableBody.innerHTML = `
+          <tr>
+            <td colSpan="9" class="px-6 py-12 text-center text-xs font-mono text-on-surface-variant">
+              NO CRYO-NODES MATCH ACTIVE SEARCH MATRICES
+            </td>
+          </tr>
+        `;
+      } else {
+        tableBody.innerHTML = filtered.map(asset => {
+          const isAtRisk = asset.status === "DEFECT" || asset.status === "UNPLUGGED";
+          const isSelected = selectedAssetId === asset.id;
+          
+          let statusBadgeClass = "bg-tertiary/10 border-tertiary/40 text-tertiary";
+          if (asset.status === "DEFECT") statusBadgeClass = "bg-secondary-container/15 border-secondary/40 text-secondary animate-pulse";
+          if (asset.status === "WARNING") statusBadgeClass = "bg-amber-500/10 border-amber-500/40 text-amber-500";
+          if (asset.status === "UNPLUGGED") statusBadgeClass = "bg-[#F40009]/15 border-[#F40009]/50 text-white animate-pulse";
 
-    // Log registration
-    const newLog: LogEntry = {
-      id: `log-${Date.now()}`,
-      timestamp: new Date().toLocaleTimeString("en-US", { hour12: false }),
-      node: newAsset.id,
-      message: `new edge node commissioned in ${newAsset.location}. Streaming on channel ${newAsset.channel}.`,
-      type: "success",
-    };
-    setLogs((prev) => [newLog, ...prev]);
-  };
+          let liveTempText = asset.temp !== null ? `${asset.temp}°C` : "N/A";
+          let tempStyle = "text-on-surface-variant";
+          if (asset.status === "SAFE") tempStyle = "text-tertiary";
+          if (asset.status === "WARNING") tempStyle = "text-amber-500";
+          if (asset.status === "DEFECT") tempStyle = "text-error";
 
-  // Authorize Predictive AI restock
-  const handleConfirmDispatch = (analysis: GeminiAnalysisResponse) => {
-    if (!selectedAssetForDispatch) return;
+          let actionButton = `<button onclick="event.stopPropagation(); addToast('TELEMETRY_LOGGED', 'Telemetry metrics for ${asset.id} validated as optimal.')" class="p-1 hover:bg-surface-container-highest rounded text-on-surface-variant hover:text-white cursor-pointer"><i data-lucide="eye" class="w-4 h-4 inline"></i></button>`;
+          if (isAtRisk) {
+            actionButton = `
+              <div class="flex flex-col items-center gap-1">
+                <button onclick="event.stopPropagation(); triggerPredictiveDispatch('${asset.id}')" class="px-3 py-1.5 bg-[#F40009] text-white font-mono text-[9px] font-bold rounded hover:scale-105 active:scale-95 transition-all shadow-[0_0_10px_rgba(244,0,9,0.4)] cursor-pointer">
+                  DISPATCH PREDICTIVE RESTOCK
+                </button>
+                <span class="text-[8px] text-on-surface-variant/60 font-mono tracking-wider">SLA Target: &lt; 4min</span>
+              </div>
+            `;
+          }
 
-    const assetId = selectedAssetForDispatch.id;
+          return `
+            <tr onclick="selectAssetId('${asset.id}')" class="hover:bg-surface-variant/20 transition-colors group cursor-pointer ${isAtRisk ? 'bg-error-container/5' : ''} ${isSelected ? 'bg-surface-container-high/40' : ''}">
+              <td class="px-6 py-4 font-mono text-xs font-bold text-white">${asset.id}</td>
+              <td class="px-6 py-4 font-sans text-xs text-on-surface-variant">${asset.location}</td>
+              <td class="px-6 py-4 font-sans text-xs text-on-surface-variant/70">${asset.channel}</td>
+              <td class="px-6 py-4 font-sans text-xs text-white">${asset.payload}</td>
+              <td class="px-6 py-4 font-mono text-xs text-right font-semibold ${tempStyle}">${liveTempText}</td>
+              <td class="px-6 py-4 font-mono text-xs text-right ${asset.status === 'DEFECT' ? 'text-secondary' : 'text-on-surface-variant'}">${asset.doorOpen}</td>
+              <td class="px-6 py-4 font-mono text-xs text-right text-on-surface-variant">${asset.staticHrs}</td>
+              <td class="px-6 py-4 text-center">
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${statusBadgeClass}">
+                  ${asset.status}
+                </span>
+              </td>
+              <td class="px-6 py-4 text-center">${actionButton}</td>
+            </tr>
+          `;
+        }).join("");
+      }
 
-    // Log to Event logs
-    const timestamp = new Date().toLocaleTimeString("en-US", { hour12: false });
-    const newLog: LogEntry = {
-      id: `log-${Date.now()}`,
-      timestamp,
-      node: "AI_CONTROLLER",
-      message: analysis.dispatch_log_entry || `PREDICTIVE RESTOCK dispatched for ${assetId}. Target < 4min.`,
-      type: "success",
-    };
-    setLogs((prev) => [newLog, ...prev]);
+      // Render geofencing radar pins
+      const radarPointsGroup = document.getElementById("radar-svg-points");
+      radarPointsGroup.innerHTML = assets.map(asset => {
+        const coords = MAP_COORDINATES[asset.id] || { x: 50, y: 50 };
+        const isSelected = selectedAssetId === asset.id;
+        
+        let pinColor = "#85d3dc";
+        let animClass = "animate-ping";
+        if (asset.status === "DEFECT") {
+          pinColor = "#ffb4a9";
+          animClass = "animate-pulse";
+        } else if (asset.status === "WARNING") {
+          pinColor = "#f59e0b";
+        } else if (asset.status === "UNPLUGGED") {
+          pinColor = "#ff5543";
+        }
 
-    // Create Dispatch Log Entry
-    const newRun: DispatchLog = {
-      id: `RUN-${Math.floor(Math.random() * 9000) + 1000}`,
-      assetId,
-      timestamp,
-      payload: selectedAssetForDispatch.payload,
-      route: analysis.predictive_restock_route || "Direct Air-Grid",
-      status: "EN_ROUTE",
-      targetResolution: `${analysis.target_resolution_time || 4} min`,
-      diagnosis: analysis.diagnosis,
-      recommendation: analysis.recommendation,
-    };
-    setDispatchRuns((prev) => [newRun, ...prev]);
+        return `
+          <g onclick="event.stopPropagation(); selectAssetId('${asset.id}')" class="cursor-pointer" title="Node: ${asset.id} (${asset.status})">
+            <circle cx="${coords.x}" cy="${coords.y}" r="${isSelected ? 6 : 3}" fill="none" stroke="${pinColor}" stroke-width="1" class="${animClass}"></circle>
+            <circle cx="${coords.x}" cy="${coords.y}" r="${isSelected ? 3.5 : 2}" fill="${pinColor}" class="${isSelected ? 'stroke-white stroke-[0.75]' : ''}"></circle>
+          </g>
+        `;
+      }).join("");
 
-    // Resolve asset status back to SAFE and nominate cryogenic temp target
-    setAssets((prev) =>
-      prev.map((asset) => {
-        if (asset.id === assetId) {
-          const startingTemp = asset.payload.includes("VACCINE")
-            ? -78.4
-            : asset.payload.includes("ENZYME")
-            ? -15.0
-            : -70.1;
+      document.getElementById("radar-locked-node-text").innerText = selectedAssetId ? `TRACKING_NODE: ${selectedAssetId}` : "SELECT NODE TO SECURE GEOLOCK";
+
+      // Streaming logs list
+      const logsContainer = document.getElementById("system-events-stream-logs");
+      logsContainer.innerHTML = logs.map(log => {
+        let typeColor = "text-primary";
+        if (log.type === "error") typeColor = "text-error";
+        if (log.type === "warn") typeColor = "text-secondary";
+        if (log.type === "success") typeColor = "text-tertiary";
+
+        return `
+          <div class="flex items-center gap-4 py-2 border-b border-outline-variant/5 text-xs font-mono">
+            <span class="text-[10px] text-tertiary shrink-0">${log.timestamp}</span>
+            <span class="w-1 h-1 rounded-full bg-outline-variant"></span>
+            <p class="text-on-surface-variant leading-relaxed text-[11px]">
+              <span class="font-bold mr-1.5 ${typeColor}">${log.node ? `${log.node} :` : ""}</span>
+              ${log.message}
+            </p>
+          </div>
+        `;
+      }).join("");
+
+      // Render Asset Fleet commission lists
+      const fleetInvBody = document.getElementById("fleet-inventory-table-body");
+      fleetInvBody.innerHTML = assets.map(a => {
+        let stClass = "text-tertiary";
+        if (a.status === "DEFECT") stClass = "text-secondary animate-pulse";
+        if (a.status === "WARNING") stClass = "text-amber-500";
+        if (a.status === "UNPLUGGED") stClass = "text-error";
+
+        return `
+          <tr class="border-b border-outline-variant/10">
+            <td class="py-2 font-bold">${a.id}</td>
+            <td class="py-2 text-on-surface-variant/80">${a.location}</td>
+            <td class="py-2 text-on-surface-variant/80">${a.payload}</td>
+            <td class="py-2 text-right">${a.batteryPct !== null ? `${a.batteryPct}%` : 'N/A'}</td>
+            <td class="py-2 text-right">${a.gasPressure !== null ? `${a.gasPressure} bar` : 'N/A'}</td>
+            <td class="py-2 text-center font-bold ${stClass}">${a.status}</td>
+          </tr>
+        `;
+      }).join("");
+
+      // Render Active Predictive Dispatch runs
+      const dispatchBody = document.getElementById("dispatch-table-body");
+      const dispatchBadge = document.getElementById("badge-dispatch-active");
+      const activeRuns = dispatchRuns.filter(r => r.status === "EN_ROUTE");
+      
+      document.getElementById("dispatch-count-badge").innerText = `${dispatchRuns.length} ACTIVE DISPATCHES`;
+      if (activeRuns.length > 0) {
+        dispatchBadge.classList.remove("hidden");
+        dispatchBadge.innerText = activeRuns.length;
+      } else {
+        dispatchBadge.classList.add("hidden");
+      }
+
+      if (dispatchRuns.length === 0) {
+        dispatchBody.innerHTML = `
+          <tr>
+            <td colSpan="8" class="px-6 py-12 text-center text-xs font-mono text-on-surface-variant">
+              NO PREDICTIVE RESTOCK FLIGHTS LOGGED
+            </td>
+          </tr>
+        `;
+      } else {
+        dispatchBody.innerHTML = dispatchRuns.map(run => {
+          let statusColor = "bg-amber-500/10 border-amber-500/40 text-amber-500";
+          if (run.status === "COMPLETED") statusColor = "bg-tertiary/10 border-tertiary/40 text-tertiary";
+          if (run.status === "CANCELLED") statusColor = "bg-red-500/10 border-red-500/40 text-red-500";
+
+          let actions = "";
+          if (run.status === "EN_ROUTE") {
+            actions = `
+              <div class="flex items-center justify-center gap-2">
+                <button onclick="resolveDispatch('${run.id}')" class="px-2 py-1 bg-tertiary text-on-tertiary font-bold rounded hover:opacity-90 cursor-pointer">COMPLETE</button>
+                <button onclick="cancelDispatch('${run.id}')" class="px-2 py-1 bg-surface-container-highest rounded text-on-surface-variant hover:text-white cursor-pointer">CANCEL</button>
+              </div>
+            `;
+          } else {
+            actions = `<span class="text-[10px] text-on-surface-variant/40 uppercase">RESOLVED</span>`;
+          }
+
+          return `
+            <tr class="border-b border-outline-variant/10">
+              <td class="px-6 py-3 font-bold">${run.id}</td>
+              <td class="px-6 py-3 text-white font-bold">${run.assetId}</td>
+              <td class="px-6 py-3 text-on-surface-variant/70">${run.timestamp}</td>
+              <td class="px-6 py-3 text-white">${run.payload}</td>
+              <td class="px-6 py-3 text-on-surface-variant/80">${run.route}</td>
+              <td class="px-6 py-3 text-right font-bold text-tertiary">${run.targetResolution}</td>
+              <td class="px-6 py-3 text-center">
+                <span class="inline-flex px-2 py-0.5 rounded border text-[9px] font-bold ${statusColor}">
+                  ${run.status}
+                </span>
+              </td>
+              <td class="px-6 py-3 text-center">${actions}</td>
+            </tr>
+          `;
+        }).join("");
+      }
+
+      // Refresh icons for dynamic DOM
+      lucide.createIcons();
+    }
+
+    function selectAssetId(assetId) {
+      selectedAssetId = assetId;
+      renderAll();
+    }
+
+    // Toggle simulator settings dropdown
+    function toggleSettings() {
+      const p = document.getElementById("settings-panel");
+      p.classList.toggle("hidden");
+    }
+
+    // Simulate Anomaly Injection
+    function injectAnomaly(type) {
+      assets = assets.map(a => {
+        if (a.id === "CC-METRO-01") {
           return {
-            ...asset,
-            status: "SAFE",
-            temp: startingTemp,
-            doorOpen: "00:00",
-            history: [startingTemp, startingTemp, startingTemp, startingTemp, startingTemp],
-          };
-        }
-        return asset;
-      })
-    );
-
-    addToast("DISPATCH_EXECUTED", `AI predictive restock route payload sent for ${assetId}. Intercepting stock-out anomaly.`);
-    setSelectedAssetForDispatch(null);
-  };
-
-  // Manually solve an active dispatch log
-  const handleCompleteDispatch = (logId: string) => {
-    setDispatchRuns((prev) =>
-      prev.map((run) => {
-        if (run.id === logId) {
-          return { ...run, status: "COMPLETED" };
-        }
-        return run;
-      })
-    );
-
-    addToast("DISPATCH_RESOLVED", `Predictive run ${logId} marked completed. Payload verification successful.`);
-  };
-
-  const handleCancelDispatch = (logId: string) => {
-    setDispatchRuns((prev) =>
-      prev.map((run) => {
-        if (run.id === logId) {
-          return { ...run, status: "CANCELLED" };
-        }
-        return run;
-      })
-    );
-    addToast("DISPATCH_CANCELLED", `Predictive run ${logId} cancelled.`);
-  };
-
-  // Force trigger warnings/defects for demonstration purposes
-  const triggerSimulationAnomaly = (type: "WARNING" | "DEFECT" | "UNPLUGGED") => {
-    const metroAsset = assets.find((a) => a.id === "CC-METRO-01");
-    if (!metroAsset) return;
-
-    setAssets((prev) =>
-      prev.map((asset) => {
-        if (asset.id === "CC-METRO-01") {
-          return {
-            ...asset,
+            ...a,
             status: type,
             temp: type === "UNPLUGGED" ? null : -55.2,
+            liveTemp: type === "UNPLUGGED" ? null : -55.2,
             doorOpen: type === "DEFECT" ? "02:40" : "00:00",
+            gasPressure: type === "UNPLUGGED" ? null : 0.42,
+            batteryPct: type === "UNPLUGGED" ? null : 15,
           };
         }
-        return asset;
-      })
-    );
+        return a;
+      });
 
-    const timestamp = new Date().toLocaleTimeString("en-US", { hour12: false });
-    const message =
-      type === "UNPLUGGED"
-        ? "NODE_POWER_BREACH: CC-METRO-01 disconnected. Sensor telemetry N/A."
-        : `ALERT_THERMAL_DRIFT: Anomaly thresholds violated on CC-METRO-01.`;
-
-    setLogs((prev) => [
-      {
+      const timestamp = new Date().toLocaleTimeString("en-US", { hour12: false });
+      const msg = type === "UNPLUGGED" ? "NODE_POWER_BREACH: CC-METRO-01 disconnected. Sensor telemetry N/A." : `ALERT_THERMAL_DRIFT: Anomaly thresholds violated on CC-METRO-01.`;
+      
+      logs.unshift({
         id: `log-${Date.now()}`,
         timestamp,
         node: "SIMULATOR",
-        message,
-        type: type === "UNPLUGGED" ? "error" : "warn",
-      },
-      ...prev,
-    ]);
+        message: msg,
+        type: type === "UNPLUGGED" ? "error" : "warn"
+      });
 
-    addToast(`SIMULATION_${type}`, `Simulated ${type} event triggered on asset CC-METRO-01.`);
-    setShowSettings(false);
-  };
+      addToast(`SIMULATION_${type}`, `Simulated ${type} event triggered on asset CC-METRO-01.`);
+      toggleSettings();
+      renderAll();
+    }
 
-  const handleResetSimulation = () => {
-    setAssets(INITIAL_ASSETS);
-    setLogs(INITIAL_LOGS);
-    setDispatchRuns([]);
-    addToast("TELEMETRY_RESET", "Telemetry configuration states reverted back to baseline matrices.");
-    setShowSettings(false);
-  };
+    function resetSimulation() {
+      assets = [
+        {
+          id: "CC-METRO-01",
+          location: "Berlin Hub A-4",
+          channel: "Retail_Partner",
+          payload: "VACCINE_TYPE_B",
+          temp: -80.8,
+          liveTemp: -80.8,
+          doorOpen: "00:00",
+          staticHrs: 22.8,
+          gasPressure: 1.24,
+          batteryPct: 98,
+          status: "SAFE",
+          assetValueAtRisk: 0,
+          history: [-80.1, -80.3, -80.5, -80.6, -80.8, -80.8, -80.7, -80.8, -80.8, -80.8],
+        },
+        {
+          id: "CC-CORP-12",
+          location: "Transit_Route_22",
+          channel: "Internal_Fleet",
+          payload: "ENZYME_ALPHA",
+          temp: 12.3,
+          liveTemp: 12.3,
+          doorOpen: "04:15",
+          staticHrs: 21.6,
+          gasPressure: 0.31,
+          batteryPct: 14,
+          status: "DEFECT",
+          assetValueAtRisk: 45000,
+          history: [-5.0, -1.0, 2.3, 5.8, 8.1, 10.4, 11.5, 12.1, 12.3, 12.3],
+        },
+        {
+          id: "CC-CAMP-05",
+          location: "Munich South-West",
+          channel: "Logistics_Contract",
+          payload: "REAGENT_GAMMA",
+          temp: -62.6,
+          liveTemp: -62.6,
+          doorOpen: "00:12",
+          staticHrs: 64.2,
+          gasPressure: 1.08,
+          batteryPct: 82,
+          status: "WARNING",
+          assetValueAtRisk: 0,
+          history: [-65.5, -65.0, -64.8, -64.2, -63.9, -63.5, -63.1, -62.8, -62.7, -62.6],
+        },
+        {
+          id: "CC-RETAIL-09",
+          location: "Store_Front_882",
+          channel: "Third_Party",
+          payload: "BIO_SAMPLE_Z",
+          temp: null,
+          liveTemp: null,
+          doorOpen: "UNKNOWN",
+          staticHrs: 0.1,
+          gasPressure: null,
+          batteryPct: null,
+          status: "UNPLUGGED",
+          assetValueAtRisk: 12000,
+          history: [null, null, null, null, null, null, null, null, null, null],
+        },
+      ];
+      dispatchRuns = [];
+      logs = [
+        {
+          id: "log-1",
+          timestamp: "14:02:11",
+          node: "NODE_ALPHA_04",
+          message: "connected successfully. Handshake latency: 12ms.",
+          type: "info",
+        },
+        {
+          id: "log-2",
+          timestamp: "13:58:44",
+          node: "ALERT_THERMAL_DRIFT",
+          message: "detected at CC-CORP-12. External temp 32°C.",
+          type: "warn",
+        },
+      ];
 
-  // Filtered Assets list
-  const filteredAssets = assets.filter((asset) => {
-    const query = searchQuery.toLowerCase();
-    const matchesSearch =
-      asset.id.toLowerCase().includes(query) ||
-      asset.location.toLowerCase().includes(query) ||
-      asset.payload.toLowerCase().includes(query);
+      addToast("TELEMETRY_RESET", "Telemetry configuration states reverted back to baseline matrices.");
+      toggleSettings();
+      renderAll();
+    }
 
-    const matchesStatus = statusFilter === "ALL" || asset.status === statusFilter;
+    // Toggle search & filters panel
+    function toggleFilters() {
+      const f = document.getElementById("filter-bar");
+      f.classList.toggle("hidden");
+    }
 
-    return matchesSearch && matchesStatus;
-  });
+    function setStatusFilter(filterVal) {
+      statusFilter = filterVal;
+      const bList = ["ALL", "SAFE", "WARNING", "DEFECT", "UNPLUGGED"];
+      bList.forEach(b => {
+        const btn = document.getElementById(`filter-btn-${b}`);
+        if (b === filterVal) {
+          btn.className = "px-3 py-1 rounded text-[10px] font-mono cursor-pointer border bg-tertiary text-on-tertiary border-tertiary";
+        } else {
+          btn.className = "px-3 py-1 rounded text-[10px] font-mono cursor-pointer border bg-surface-container-lowest text-on-surface-variant border-outline-variant/20 hover:border-tertiary/30";
+        }
+      });
+      renderAll();
+    }
 
-  // Calculate stats
-  const defectCount = assets.filter((a) => a.status === "DEFECT").length;
-  const warningCount = assets.filter((a) => a.status === "WARNING").length;
-  const unpluggedCount = assets.filter((a) => a.status === "UNPLUGGED").length;
+    function handleSearch(searchVal) {
+      searchQuery = searchVal;
+      renderAll();
+    }
 
-  const atRiskAssets = assets.filter((a) => a.status === "DEFECT" || a.status === "UNPLUGGED");
-  const totalValueAtRisk = atRiskAssets.reduce((sum, a) => sum + (a.assetValueAtRisk || 0), 0);
+    // CSV exporter
+    function exportCSVLogs() {
+      let csvContent = "data:text/csv;charset=utf-8,";
+      csvContent += "Timestamp,Node,Message,Type\n";
+      logs.forEach(log => {
+        csvContent += `"${log.timestamp}","${log.node || ''}","${log.message.replace(/"/g, '""')}","${log.type}"\n`;
+      });
+      
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `edgecold_telemetry_logs_${Date.now()}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
 
-  return (
-    <div className="min-h-screen bg-surface flex flex-col selection:bg-tertiary/30 selection:text-white pb-16 md:pb-0">
-      {/* TopAppBar */}
-      <header className="fixed top-0 left-0 right-0 z-50 flex justify-between items-center w-full px-6 py-4 bg-surface border-b border-outline-variant/10">
-        <div className="flex items-center gap-3">
-          <Radio className="w-6 h-6 text-tertiary animate-pulse" />
-          <h1 className="font-mono text-[15px] font-bold tracking-tighter text-white uppercase">
-            EDGE_COLD // SYSTEM_MONITOR
-          </h1>
+      addToast("EXPORT_COMPLETE", "Unified operations database logs exported in CSV format.");
+    }
+
+    // Interactive Add Asset Handler
+    function handleAddAssetSubmit(e) {
+      e.preventDefault();
+      const id = document.getElementById("form-asset-id").value.toUpperCase().trim();
+      const location = document.getElementById("form-asset-location").value.trim();
+      const channel = document.getElementById("form-asset-channel").value;
+      const payload = document.getElementById("form-asset-payload").value.toUpperCase().trim();
+      const temp = parseFloat(document.getElementById("form-asset-temp").value);
+      const pressure = parseFloat(document.getElementById("form-asset-pressure").value);
+      const battery = parseInt(document.getElementById("form-asset-battery").value, 10);
+
+      if (!id || !location || !payload) return;
+
+      const newAsset = {
+        id,
+        location,
+        channel,
+        payload,
+        temp,
+        liveTemp: temp,
+        doorOpen: "00:00",
+        staticHrs: 0.0,
+        gasPressure: isNaN(pressure) ? 1.0 : pressure,
+        batteryPct: isNaN(battery) ? 100 : battery,
+        status: "SAFE",
+        assetValueAtRisk: 0,
+        history: [temp, temp, temp, temp, temp, temp, temp, temp, temp, temp]
+      };
+
+      assets.push(newAsset);
+      addToast("NODE_COMMISSIONED", `Asset ${id} online and streaming telemetry successfully.`);
+
+      const timestamp = new Date().toLocaleTimeString("en-US", { hour12: false });
+      logs.unshift({
+        id: `log-${Date.now()}`,
+        timestamp,
+        node: id,
+        message: `new edge node commissioned in ${location}. Streaming on channel ${channel}.`,
+        type: "success"
+      });
+
+      document.getElementById("add-asset-form").reset();
+      switchTab("telemetry");
+      renderAll();
+    }
+
+    // Predictive dispatch simulation modal
+    function triggerPredictiveDispatch(assetId) {
+      dispatchModalAsset = assets.find(a => a.id === assetId);
+      if (!dispatchModalAsset) return;
+
+      const modal = document.getElementById("dispatch-modal");
+      const analyzingEl = document.getElementById("modal-analyzing");
+      const resultsEl = document.getElementById("modal-results");
+
+      modal.classList.remove("hidden");
+      analyzingEl.classList.remove("hidden");
+      resultsEl.classList.add("hidden");
+
+      // Trigger server-side Gemini decision loop or mock fallback gracefully
+      const payloadContext = {
+        asset: dispatchModalAsset,
+        logs: logs.slice(0, 5)
+      };
+
+      fetch("/api/gemini/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payloadContext)
+      })
+      .then(res => {
+        if (!res.ok) throw new Error("Backend offline");
+        return res.json();
+      })
+      .then(data => {
+        geminiAnalysisResponse = data;
+        displayModalResults(data);
+      })
+      .catch(err => {
+        // High fidelity mock fallback
+        const mockDiagnosis = dispatchModalAsset.payload.includes("VACCINE") 
+          ? "Thermodynamic gasket pressure decay resulting in gradual core thermal drift."
+          : "Sub-optimal thermal isolation with power module disconnect.";
+        
+        const mockRoute = dispatchModalAsset.id === "CC-CORP-12" ? "Emergency Air-Grid Corridor 4B" : "Sovereign Air Transport Sector A";
+        const mockResolution = "4 min";
+        const mockRec = `Deploy emergency insulated cargo replacement vector immediately to coordinate and salvage $${getCargoCommercialValuation(dispatchModalAsset.payload).toLocaleString()} USD asset cargo.`;
+
+        geminiAnalysisResponse = {
+          diagnosis: mockDiagnosis,
+          predictive_restock_route: mockRoute,
+          target_resolution_time: 4,
+          recommendation: mockRec,
+          dispatch_log_entry: `PREDICTIVE DRONE RESTOCK dispatched for ${dispatchModalAsset.id} to protect cargo payload.`
+        };
+
+        displayModalResults(geminiAnalysisResponse);
+      });
+    }
+
+    function displayModalResults(data) {
+      document.getElementById("modal-analyzing").classList.add("hidden");
+      const resultsEl = document.getElementById("modal-results");
+      resultsEl.classList.remove("hidden");
+
+      document.getElementById("modal-result-diag").innerText = data.diagnosis;
+      document.getElementById("modal-result-route").innerText = data.predictive_restock_route || "Air-Grid Corridor";
+      document.getElementById("modal-result-resolution").innerText = `${data.target_resolution_time || 4} min`;
+      document.getElementById("modal-result-rec").innerText = data.recommendation;
+    }
+
+    function closeDispatchModal() {
+      document.getElementById("dispatch-modal").classList.add("hidden");
+      dispatchModalAsset = null;
+    }
+
+    function confirmPredictiveDispatch() {
+      if (!dispatchModalAsset || !geminiAnalysisResponse) return;
+
+      const runId = `RUN-${Math.floor(Math.random() * 9000) + 1000}`;
+      const timestamp = new Date().toLocaleTimeString("en-US", { hour12: false });
+
+      // Add to dispatch lists
+      dispatchRuns.unshift({
+        id: runId,
+        assetId: dispatchModalAsset.id,
+        timestamp,
+        payload: dispatchModalAsset.payload,
+        route: geminiAnalysisResponse.predictive_restock_route || "Air Corridor Tactical Vector",
+        status: "EN_ROUTE",
+        targetResolution: `${geminiAnalysisResponse.target_resolution_time || 4} min`,
+        diagnosis: geminiAnalysisResponse.diagnosis,
+        recommendation: geminiAnalysisResponse.recommendation
+      });
+
+      // Log to system events
+      logs.unshift({
+        id: `log-${Date.now()}`,
+        timestamp,
+        node: "AI_CONTROLLER",
+        message: geminiAnalysisResponse.dispatch_log_entry || `PREDICTIVE RESTOCK launched for ${dispatchModalAsset.id}`,
+        type: "success"
+      });
+
+      // Restore target node back to safe configuration
+      assets = assets.map(a => {
+        if (a.id === dispatchModalAsset.id) {
+          const startingTemp = a.payload.includes("VACCINE") ? -78.4 : a.payload.includes("ENZYME") ? -15.0 : -70.1;
+          return {
+            ...a,
+            status: "SAFE",
+            temp: startingTemp,
+            liveTemp: startingTemp,
+            doorOpen: "00:00",
+            gasPressure: a.gasPressure !== null ? 1.20 : null,
+            batteryPct: a.batteryPct !== null ? 100 : null,
+            history: [startingTemp, startingTemp, startingTemp, startingTemp, startingTemp, startingTemp, startingTemp, startingTemp, startingTemp, startingTemp]
+          };
+        }
+        return a;
+      });
+
+      addToast("DISPATCH_EXECUTED", `AI predictive restock route payload sent for ${dispatchModalAsset.id}. Intercepting stock-out anomaly.`);
+      closeDispatchModal();
+      renderAll();
+    }
+
+    // Resolve an active drone restock run
+    function resolveDispatch(runId) {
+      dispatchRuns = dispatchRuns.map(run => {
+        if (run.id === runId) {
+          return { ...run, status: "COMPLETED" };
+        }
+        return run;
+      });
+
+      addToast("DISPATCH_RESOLVED", `Predictive run ${runId} marked completed. Payload verification successful.`);
+      renderAll();
+    }
+
+    function cancelDispatch(runId) {
+      dispatchRuns = dispatchRuns.map(run => {
+        if (run.id === runId) {
+          return { ...run, status: "CANCELLED" };
+        }
+        return run;
+      });
+
+      addToast("DISPATCH_CANCELLED", `Predictive run ${runId} cancelled.`);
+      renderAll();
+    }
+
+    // Dynamic Toasts overlay controller
+    function addToast(title, message) {
+      const id = `toast-${Date.now()}`;
+      const container = document.getElementById("toast-container");
+      
+      const toastEl = document.createElement("div");
+      toastEl.id = id;
+      toastEl.className = "bg-surface-container-highest border-l-4 border-tertiary p-4 rounded shadow-2xl flex items-center gap-4 transition-all duration-300 pointer-events-auto max-w-sm w-full animate-in slide-in-from-right duration-200";
+      toastEl.innerHTML = `
+        <i data-lucide="truck" class="w-5 h-5 text-tertiary shrink-0 animate-bounce"></i>
+        <div class="flex flex-col font-mono text-xs">
+          <span class="font-bold text-white uppercase tracking-wider">${title}</span>
+          <span class="text-on-surface-variant text-[11px] leading-relaxed mt-0.5">${message}</span>
         </div>
+        <button onclick="document.getElementById('${id}').remove()" class="ml-auto opacity-50 hover:opacity-100 cursor-pointer">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      `;
+      container.appendChild(toastEl);
+      lucide.createIcons();
 
-        {/* Dynamic statistical counters matching HTML specs */}
-        <div className="hidden lg:flex items-center gap-4">
-          <div className="flex items-center gap-2 px-3 py-1 bg-surface-container rounded-full border border-outline-variant/10">
-            <span className="w-2 h-2 rounded-full bg-tertiary shadow-[0_0_8px_rgba(133,211,220,0.8)]"></span>
-            <span className="font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">
-              Active Networks: {assets.length}
-            </span>
-          </div>
-          <div className="flex items-center gap-2 px-3 py-1 bg-surface-container rounded-full border border-outline-variant/10">
-            <span
-              className={`w-2 h-2 rounded-full ${
-                defectCount > 0 ? "bg-secondary shadow-[0_0_8px_rgba(255,180,169,0.8)] animate-pulse" : "bg-outline"
-              }`}
-            ></span>
-            <span className="font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">
-              Critical Defects: {defectCount}
-            </span>
-          </div>
-          <div className="flex items-center gap-2 px-3 py-1 bg-surface-container rounded-full border border-outline-variant/10">
-            <span
-              className={`w-2 h-2 rounded-full ${
-                unpluggedCount > 0 ? "bg-error shadow-[0_0_8px_rgba(255,180,171,0.8)] animate-ping" : "bg-outline"
-              }`}
-            ></span>
-            <span className="font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">
-              Disconnected Assets: {unpluggedCount}
-            </span>
-          </div>
+      setTimeout(() => {
+        const target = document.getElementById(id);
+        if (target) target.remove();
+      }, 6000);
+    }
+
+    // Toggle assistant chatbot overlay
+    function toggleChatbot() {
+      const chatPanel = document.getElementById("chatbot-panel");
+      chatPanel.classList.toggle("hidden");
+      lucide.createIcons();
+    }
+
+    // Chat Message Handlers
+    function handleSendMessage(e) {
+      e.preventDefault();
+      const input = document.getElementById("chat-input-field");
+      const text = input.value.trim();
+      if (!text) return;
+
+      input.value = "";
+      appendChatMessage("ops_manager", text);
+
+      // Display loading typing ping
+      const loadingId = `chat-loading-${Date.now()}`;
+      const chatBox = document.getElementById("chat-messages-container");
+      
+      const loadingHTML = document.createElement("div");
+      loadingHTML.id = loadingId;
+      loadingHTML.className = "flex gap-2.5";
+      loadingHTML.innerHTML = `
+        <div class="w-6 h-6 rounded-full bg-tertiary/10 border border-tertiary/40 flex items-center justify-center shrink-0">
+          <i data-lucide="bot" class="w-3.5 h-3.5 text-tertiary animate-pulse"></i>
         </div>
-
-        <div className="flex items-center gap-3 relative">
-          <button
-            onClick={() => setShowSettings(!showSettings)}
-            className="p-2 hover:bg-surface-variant/40 text-on-surface hover:text-white rounded-lg transition-all cursor-pointer"
-            title="Configure simulation"
-          >
-            <Settings className="w-5 h-5 text-primary" />
-          </button>
-
-          {/* Settings dropdown menu */}
-          {showSettings && (
-            <div className="absolute right-0 top-12 w-64 bg-surface-container-high border border-outline-variant/30 rounded-xl shadow-2xl p-4 space-y-3 z-50 font-mono text-xs animate-in fade-in duration-150">
-              <span className="text-[10px] text-tertiary font-bold tracking-wider block border-b border-outline-variant/10 pb-1 uppercase">
-                CORES_SIMULATOR_PANEL
-              </span>
-
-              <div className="space-y-2">
-                <button
-                  onClick={() => triggerSimulationAnomaly("DEFECT")}
-                  className="w-full text-left px-2 py-1.5 hover:bg-surface-container-highest rounded text-white flex justify-between items-center cursor-pointer"
-                >
-                  <span>Inject DEFECT</span>
-                  <span className="text-[9px] bg-secondary-container text-secondary px-1 py-0.5 rounded">
-                    CC-METRO-01
-                  </span>
-                </button>
-                <button
-                  onClick={() => triggerSimulationAnomaly("WARNING")}
-                  className="w-full text-left px-2 py-1.5 hover:bg-surface-container-highest rounded text-white flex justify-between items-center cursor-pointer"
-                >
-                  <span>Inject WARNING</span>
-                  <span className="text-[9px] bg-amber-500/10 text-amber-500 px-1 py-0.5 rounded border border-amber-500/30">
-                    CC-METRO-01
-                  </span>
-                </button>
-                <button
-                  onClick={() => triggerSimulationAnomaly("UNPLUGGED")}
-                  className="w-full text-left px-2 py-1.5 hover:bg-surface-container-highest rounded text-white flex justify-between items-center cursor-pointer"
-                >
-                  <span>Inject UNPLUGGED</span>
-                  <span className="text-[9px] bg-error-container/20 text-error px-1 py-0.5 rounded border border-error-container/30">
-                    CC-METRO-01
-                  </span>
-                </button>
-                <button
-                  onClick={handleResetSimulation}
-                  className="w-full text-left px-2 py-1.5 hover:bg-surface-container-highest rounded text-tertiary flex items-center gap-1.5 border-t border-outline-variant/10 pt-2 cursor-pointer font-bold"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  RESET SYSTEM METRICS
-                </button>
-              </div>
-            </div>
-          )}
-
-          <div className="w-8 h-8 rounded-full overflow-hidden border border-outline shrink-0">
-            <img
-              className="w-full h-full object-cover"
-              alt="Technical Operations Manager"
-              referrerPolicy="no-referrer"
-              src="https://lh3.googleusercontent.com/aida-public/AB6AXuDUR5Ix45pJXKb-I-TjUixhEPmQAc_oDxjL-eQPU48UR6jd9Te0XinxZrJwDc1tNMKzHrfk1zgSVgyoiSMKUr4bISSm-UCpE958UzhRhjXmzo9HZgn2otIqQJIiqMfwx_6it3eoC3CZxTi0EGRTUtJNja5fRQkfu7RBFe9KXMVrTPIYTSnM7CitOPruPkn-m5RBjG1DJhHJZNUYwFS3qseDvv9anDeT7yCCTD65edRZ3iDJnHolIAQ3gUO4J5QF-N0nd3bU0PjVGaUV"
-            />
-          </div>
+        <div class="bg-surface-container-highest rounded-lg p-3 text-on-surface-variant max-w-[85%] font-mono text-[10px] uppercase tracking-widest animate-pulse">
+          PROCESSING SYSTEM MATRIX DIAGNOSTICS...
         </div>
-      </header>
+      `;
+      chatBox.appendChild(loadingHTML);
+      chatBox.scrollTop = chatBox.scrollHeight;
+      lucide.createIcons();
 
-      {/* NavigationDrawer */}
-      <Sidebar
-        currentTab={currentTab}
-        setCurrentTab={setCurrentTab}
-        defectCount={defectCount}
-        unpluggedCount={unpluggedCount}
-      />
+      // Send to server-side Gemini Core API endpoint
+      fetch("/api/gemini/assistant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: text,
+          fleetState: assets,
+          logs: logs.slice(0, 5)
+        })
+      })
+      .then(res => {
+        if (!res.ok) throw new Error("Offline fallback");
+        return res.json();
+      })
+      .then(data => {
+        document.getElementById(loadingId).remove();
+        appendChatMessage("ai_controller", data.reply);
+      })
+      .catch(err => {
+        document.getElementById(loadingId).remove();
+        
+        // Intelligent locally calculated response matching keywords
+        let reply = "I am currently running in standalone operations mode. Operational logs indicate the fleet parameters are nominal with exceptions in Transit Courier CC-CORP-12.";
+        const query = text.toLowerCase();
+        
+        if (query.includes("risk") || query.includes("exposure") || query.includes("value")) {
+          const riskCount = assets.filter(a => a.status === "DEFECT" || a.status === "UNPLUGGED").length;
+          const sum = assets.filter(a => a.status === "DEFECT" || a.status === "UNPLUGGED").reduce((total, a) => total + a.assetValueAtRisk, 0);
+          reply = `The system indicates <strong>${riskCount} nodes</strong> are currently exposing financial risk due to cryogenic exceptions. Total Value At Risk is <strong>$${sum.toLocaleString()} USD</strong> (primarily Enzyme and Bio Samples cargo). Run restock drone protocols to salvage.`;
+        } else if (query.includes("defect") || query.includes("cc-corp-12") || query.includes("corp")) {
+          reply = "Asset `CC-CORP-12` has breached its thermodynamic safety bounds, with temperature drifting to 12.3°C, 14% battery charge left, and low gas pressure (0.31 bar). A predictive restock dispatch run is highly recommended.";
+        } else if (query.includes("unplugged") || query.includes("cc-retail-09")) {
+          reply = "Asset `CC-RETAIL-09` is currently in `UNPLUGGED` status. Temperature and gas telemetry are unavailable. This constitutes an immediate $12,000 USD valuation risk.";
+        } else if (query.includes("metro") || query.includes("cc-metro-01")) {
+          reply = "Asset `CC-METRO-01` is operating optimally at -80.8°C core temperature, 1.24 bar pressure, and 98% charge status. Calibration limits are normal.";
+        }
 
-      {/* Main Content */}
-      <main className="main-view md:ml-72 pt-20 flex-1 overflow-hidden flex flex-col h-screen bg-surface">
-        <div className="flex-1 overflow-y-auto custom-scrollbar px-6 py-6 lg:px-8 bg-surface">
-          {currentTab === "telemetry" && (
-            <div className="space-y-6">
-              {/* Page Header Area */}
-              <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-4 border-b border-outline-variant/10 pb-5">
-                <div>
-                  <h2 className="font-sans text-[26px] font-bold text-white tracking-tight">
-                    Multi-Payload Cold-Chain Telemetry
-                  </h2>
-                  <p className="text-on-surface-variant font-sans text-xs mt-1">
-                    Real-time edge node synchronization for sensitive biological and chemical assets.
-                  </p>
-                </div>
+        appendChatMessage("ai_controller", reply);
+      });
+    }
 
-                <div className="flex gap-2 w-full lg:w-auto">
-                  <button
-                    onClick={() => setShowFilters(!showFilters)}
-                    className={`px-4 py-2 bg-surface-container-highest border border-outline-variant/30 text-white font-mono text-xs rounded flex items-center gap-2 hover:bg-surface-variant transition-colors cursor-pointer w-full lg:w-auto justify-center ${
-                      statusFilter !== "ALL" || searchQuery ? "border-tertiary text-tertiary" : ""
-                    }`}
-                  >
-                    <Filter className="w-3.5 h-3.5 text-tertiary" />
-                    FILTER_CORES
-                  </button>
-                  <button
-                    onClick={() => {
-                      // Simulates log file compiler exporting
-                      addToast("EXPORT_COMPLETE", "Unified operations database logs exported in CSV format.");
-                    }}
-                    className="px-4 py-2 bg-tertiary text-on-tertiary font-mono text-xs font-bold rounded flex items-center gap-2 hover:opacity-90 shadow-[0_0_12px_rgba(133,211,220,0.3)] transition-all cursor-pointer w-full lg:w-auto justify-center"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    EXPORT_LOGS
-                  </button>
-                </div>
-              </div>
+    function appendChatMessage(sender, text) {
+      const container = document.getElementById("chat-messages-container");
+      const div = document.createElement("div");
+      div.className = "flex gap-2.5";
+      
+      const isAI = sender === "ai_controller";
+      const icon = isAI ? "bot" : "user";
+      const iconColor = isAI ? "text-tertiary" : "text-white";
+      const iconBg = isAI ? "bg-tertiary/10 border-tertiary/40" : "bg-white/10 border-white/20";
+      const senderTitle = isAI ? "AI_CONTROLLER" : "OPS_MANAGER";
+      const senderTitleColor = isAI ? "text-tertiary" : "text-white";
 
-              {/* EXECUTIVE ALERTS LAYER: prominent financial notification box for DEFECT or UNPLUGGED assets */}
-              {atRiskAssets.length > 0 && (
-                <div className="bg-red-500/10 border border-red-500/45 rounded-xl p-5 font-mono text-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4 animate-pulse">
-                  <div className="flex items-start gap-3">
-                    <ShieldAlert className="w-8 h-8 text-red-500 shrink-0 mt-0.5" />
-                    <div>
-                      <h3 className="font-bold text-red-500 uppercase tracking-widest text-sm">
-                        EXECUTIVE OPERATIONAL ALERT // CRITICAL FINANCIAL EXPOSURE
-                      </h3>
-                      <p className="text-on-surface-variant text-[11px] font-sans mt-1">
-                        {atRiskAssets.length} active cryogenic storage chambers are exhibiting extreme thermal or thermodynamic anomalies. Cargo integration integrity breached.
-                      </p>
-                      <div className="flex flex-wrap gap-2 mt-3">
-                        {atRiskAssets.map((asset) => (
-                          <span key={asset.id} className="bg-red-950/40 text-red-400 px-2.5 py-1 rounded border border-red-900/50 text-[10px]">
-                            <strong>{asset.id}</strong>: ${asset.assetValueAtRisk?.toLocaleString()} USD Risk ({asset.status})
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="bg-red-950/40 border border-red-900/50 rounded-lg p-4 text-center min-w-[200px] w-full md:w-auto">
-                    <span className="text-[10px] text-red-400 block uppercase tracking-wider">TOTAL VALUE AT RISK</span>
-                    <span className="text-xl font-bold text-red-500 block mt-1">
-                      ${totalValueAtRisk.toLocaleString()} USD
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {/* Collapsible status filter bar */}
-              {showFilters && (
-                <div className="bg-surface-container-high border border-outline-variant/20 p-4 rounded-xl space-y-3 animate-in slide-in-from-top-3 duration-200">
-                  <div className="flex flex-col lg:flex-row gap-4 justify-between">
-                    {/* Status Pill Selectors */}
-                    <div className="space-y-1">
-                      <span className="font-mono text-[10px] text-on-surface-variant block uppercase">
-                        CRYO_STATUS_FILTER
-                      </span>
-                      <div className="flex flex-wrap gap-1.5 mt-1">
-                        {["ALL", "SAFE", "WARNING", "DEFECT", "UNPLUGGED"].map((st) => (
-                          <button
-                            key={st}
-                            onClick={() => setStatusFilter(st)}
-                            className={`px-3 py-1 rounded text-[10px] font-mono cursor-pointer border ${
-                              statusFilter === st
-                                ? "bg-tertiary text-on-tertiary border-tertiary"
-                                : "bg-surface-container-lowest text-on-surface-variant border-outline-variant/20 hover:border-tertiary/30"
-                            }`}
-                          >
-                            {st}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Search Field */}
-                    <div className="space-y-1 lg:w-72">
-                      <span className="font-mono text-[10px] text-on-surface-variant block uppercase">
-                        SEARCH_NODE_METADATA
-                      </span>
-                      <div className="relative mt-1">
-                        <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 transform -translate-y-1/2 text-on-surface-variant/40" />
-                        <input
-                          type="text"
-                          value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                          placeholder="Search asset, loc, payload..."
-                          className="w-full bg-surface-container-lowest border border-outline-variant/20 rounded pl-8 pr-3 py-1 text-xs font-mono text-white placeholder-on-surface-variant/30 focus:outline-none focus:border-tertiary/50"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Bento Grid Metrics and Live Table */}
-              <div className="space-y-6">
-                {/* Live Telemetry Table Section */}
-                <div className="bg-surface-container-low border border-outline-variant/20 rounded-xl overflow-hidden shadow-2xl">
-                  <div className="px-6 py-4 border-b border-outline-variant/10 bg-surface-container flex justify-between items-center">
-                    <span className="font-mono text-xs text-tertiary uppercase tracking-widest font-bold block">
-                      Live Asset Fleet Telemetry
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-tertiary animate-pulse shadow-[0_0_6px_#85d3dc]"></span>
-                      <span className="font-mono text-[10px] text-on-surface-variant uppercase font-bold">
-                        STREAMING_REALTIME
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="bg-surface-container-high/50 border-b border-outline-variant/10">
-                          <th className="px-6 py-3.5 font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">
-                            Asset ID
-                          </th>
-                          <th className="px-6 py-3.5 font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">
-                            Location
-                          </th>
-                          <th className="px-6 py-3.5 font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">
-                            Channel
-                          </th>
-                          <th className="px-6 py-3.5 font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">
-                            Payload
-                          </th>
-                          <th className="px-6 py-3.5 font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-wider text-right">
-                            Live Temp
-                          </th>
-                          <th className="px-6 py-3.5 font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-wider text-right">
-                            Door Open
-                          </th>
-                          <th className="px-6 py-3.5 font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-wider text-right">
-                            Static Hrs
-                          </th>
-                          <th className="px-6 py-3.5 font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-wider text-center">
-                            Status
-                          </th>
-                          <th className="px-6 py-3.5 font-mono text-[10px] font-bold text-on-surface-variant uppercase tracking-wider text-center">
-                            Actions
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-outline-variant/5">
-                        {filteredAssets.length === 0 ? (
-                          <tr>
-                            <td colSpan={9} className="px-6 py-12 text-center text-xs font-mono text-on-surface-variant">
-                              NO CRYO-NODES MATCH ACTIVE SEARCH MATRICES
-                            </td>
-                          </tr>
-                        ) : (
-                          filteredAssets.map((asset) => {
-                            const isDefectiveOrUnplugged = asset.status === "DEFECT" || asset.status === "UNPLUGGED";
-                            return (
-                              <tr
-                                key={asset.id}
-                                onClick={() => setSelectedAssetId(asset.id)}
-                                className={`hover:bg-surface-variant/20 transition-colors group cursor-pointer ${
-                                  isDefectiveOrUnplugged ? "bg-error-container/5" : ""
-                                } ${selectedAssetId === asset.id ? "bg-surface-container-high/40" : ""}`}
-                              >
-                                <td className="px-6 py-4 font-mono text-xs font-bold text-white">
-                                  {asset.id}
-                                </td>
-                                <td className="px-6 py-4 font-sans text-xs text-on-surface-variant">
-                                  {asset.location}
-                                </td>
-                                <td className="px-6 py-4 font-sans text-xs text-on-surface-variant/70">
-                                  {asset.channel}
-                                </td>
-                                <td className="px-6 py-4 font-sans text-xs text-white">
-                                  {asset.payload}
-                                </td>
-                                <td
-                                  className={`px-6 py-4 font-mono text-xs text-right font-semibold ${
-                                    asset.status === "SAFE"
-                                      ? "text-tertiary"
-                                      : asset.status === "WARNING"
-                                      ? "text-amber-500"
-                                      : "text-error"
-                                  }`}
-                                >
-                                  {asset.temp !== null ? `${asset.temp}°C` : "N/A"}
-                                </td>
-                                <td
-                                  className={`px-6 py-4 font-mono text-xs text-right ${
-                                    asset.status === "DEFECT" ? "text-secondary" : "text-on-surface-variant"
-                                  }`}
-                                >
-                                  {asset.doorOpen}
-                                </td>
-                                <td className="px-6 py-4 font-mono text-xs text-right text-on-surface-variant">
-                                  {asset.staticHrs}
-                                </td>
-                                <td className="px-6 py-4 text-center">
-                                  <span
-                                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
-                                      asset.status === "SAFE"
-                                        ? "bg-tertiary/10 border-tertiary/40 text-tertiary"
-                                        : asset.status === "DEFECT"
-                                        ? "bg-secondary-container/15 border-secondary/40 text-secondary animate-pulse"
-                                        : asset.status === "WARNING"
-                                        ? "bg-amber-500/10 border-amber-500/40 text-amber-500"
-                                        : "bg-[#F40009]/15 border-[#F40009]/50 text-white animate-pulse"
-                                    }`}
-                                  >
-                                    {asset.status}
-                                  </span>
-                                </td>
-                                <td className="px-6 py-4 text-center">
-                                  {isDefectiveOrUnplugged ? (
-                                    <div className="flex flex-col items-center gap-1">
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setSelectedAssetForDispatch(asset);
-                                        }}
-                                        className="px-3 py-1.5 bg-[#F40009] text-white font-mono text-[9px] font-bold rounded hover:scale-105 active:scale-95 transition-all shadow-[0_0_10px_rgba(244,0,9,0.4)] cursor-pointer"
-                                      >
-                                        DISPATCH PREDICTIVE RESTOCK
-                                      </button>
-                                      <span className="text-[8px] text-on-surface-variant/60 font-mono tracking-wider">
-                                        Target Resolution: &lt; 4min
-                                      </span>
-                                    </div>
-                                  ) : (
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        addToast("TELEMETRY_LOGGED", `Telemetry metrics for ${asset.id} validated as optimal.`);
-                                      }}
-                                      className="p-1 hover:bg-surface-container-highest rounded text-on-surface-variant hover:text-white cursor-pointer"
-                                    >
-                                      <Eye className="w-4 h-4" />
-                                    </button>
-                                  )}
-                                </td>
-                              </tr>
-                            );
-                          })
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* Secondary Analytics Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {/* Payload Stability */}
-                  <div className="bg-surface-container border border-outline-variant/10 rounded-xl p-5 relative overflow-hidden group">
-                    <div className="absolute inset-0 bg-gradient-to-br from-tertiary/5 to-transparent pointer-events-none"></div>
-                    <div className="relative z-10 flex flex-col justify-between h-full">
-                      <div className="flex justify-between items-start mb-4">
-                        <span className="font-mono text-[11px] font-bold text-on-surface-variant uppercase tracking-wider">
-                          Payload Stability Index
-                        </span>
-                        <Activity className="w-5 h-5 text-tertiary" />
-                      </div>
-                      <div className="flex items-baseline gap-2">
-                        <h3 className="font-mono text-2xl font-bold text-white">{stabilityIndex}%</h3>
-                        <span className="text-tertiary font-mono text-[10px]">+0.04%</span>
-                      </div>
-
-                      {/* Visual placeholder for sparkline bar */}
-                      <div className="mt-4 h-16 w-full flex items-end gap-1">
-                        <div className="flex-1 bg-tertiary/10 h-8 rounded-t"></div>
-                        <div className="flex-1 bg-tertiary/20 h-10 rounded-t"></div>
-                        <div className="flex-1 bg-tertiary/10 h-6 rounded-t"></div>
-                        <div className="flex-1 bg-tertiary/30 h-12 rounded-t"></div>
-                        <div className="flex-1 bg-tertiary/10 h-9 rounded-t"></div>
-                        <div className="flex-1 bg-tertiary/40 h-14 rounded-t animate-pulse"></div>
-                        <div className="flex-1 bg-tertiary/20 h-11 rounded-t"></div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Carrier Geofencing Radar */}
-                  <div className="bg-surface-container border border-outline-variant/10 rounded-xl p-5 relative overflow-hidden group">
-                    <div className="relative z-10 h-full flex flex-col justify-between">
-                      <div className="flex justify-between items-start mb-2">
-                        <span className="font-mono text-[11px] font-bold text-on-surface-variant uppercase tracking-wider">
-                          Active Carrier Geofencing
-                        </span>
-                        <Radio className="w-4 h-4 text-tertiary animate-pulse" />
-                      </div>
-
-                      <div className="flex-1 min-h-[140px] mt-2">
-                        <GeofenceMap
-                          assets={assets}
-                          selectedAssetId={selectedAssetId}
-                          onSelectAsset={(id) => setSelectedAssetId(id)}
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* System Latency P99 */}
-                  <div className="bg-surface-container border border-outline-variant/10 rounded-xl p-5 relative overflow-hidden group">
-                    <div className="relative z-10 flex flex-col justify-between h-full">
-                      <div className="flex justify-between items-start mb-4">
-                        <span className="font-mono text-[11px] font-bold text-on-surface-variant uppercase tracking-wider">
-                          System Latency (P99)
-                        </span>
-                        <Activity className="w-5 h-5 text-secondary animate-pulse" />
-                      </div>
-                      <div className="flex items-baseline gap-2">
-                        <h3 className="font-mono text-2xl font-bold text-white">{latency}ms</h3>
-                        <span className="text-secondary font-mono text-[10px] font-bold uppercase tracking-wider">
-                          STABLE
-                        </span>
-                      </div>
-
-                      {/* Cool block layout latency bar */}
-                      <div className="mt-4 flex items-center gap-1 overflow-hidden">
-                        <div className="h-1 flex-1 bg-secondary rounded-full"></div>
-                        <div className="h-1 flex-1 bg-secondary rounded-full"></div>
-                        <div className="h-1 flex-1 bg-secondary rounded-full animate-pulse"></div>
-                        <div className="h-1 flex-1 bg-secondary/20 rounded-full"></div>
-                        <div className="h-1 flex-1 bg-secondary/20 rounded-full"></div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Operational Alerts Logs Section */}
-                <div className="bg-surface-container-high/30 border border-outline-variant/10 rounded-xl p-6">
-                  <h4 className="font-mono text-xs text-on-surface-variant font-bold mb-4 flex items-center gap-2 uppercase tracking-widest border-b border-outline-variant/10 pb-2">
-                    <History className="w-4 h-4 text-tertiary" />
-                    SYSTEM_EVENTS_LOG
-                  </h4>
-                  <div className="space-y-3 max-h-48 overflow-y-auto custom-scrollbar">
-                    {logs.map((log) => (
-                      <div
-                        key={log.id}
-                        className="flex items-center gap-4 py-2 border-b border-outline-variant/5 text-xs font-mono"
-                      >
-                        <span className="text-[10px] text-tertiary shrink-0">{log.timestamp}</span>
-                        <span className="w-1 h-1 rounded-full bg-outline-variant"></span>
-                        <p className="text-on-surface-variant leading-relaxed text-[11px]">
-                          <span
-                            className={`font-bold mr-1.5 ${
-                              log.type === "error"
-                                ? "text-error"
-                                : log.type === "warn"
-                                ? "text-secondary"
-                                : log.type === "success"
-                                ? "text-tertiary"
-                                : "text-primary"
-                            }`}
-                          >
-                            {log.node ? `${log.node} :` : ""}
-                          </span>
-                          {log.message}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {currentTab === "thermal" && <ThermalAnalyticsTab assets={assets} />}
-
-          {currentTab === "fleet" && <AssetFleetTab assets={assets} onAddAsset={handleAddAsset} />}
-
-          {currentTab === "dispatch" && (
-            <DispatchLogsTab
-              logs={dispatchRuns}
-              onCompleteDispatch={handleCompleteDispatch}
-              onCancelDispatch={handleCancelDispatch}
-            />
-          )}
+      div.innerHTML = `
+        <div class="w-6 h-6 rounded-full ${iconBg} border flex items-center justify-center shrink-0">
+          <i data-lucide="${icon}" class="w-3.5 h-3.5 ${iconColor}"></i>
         </div>
-      </main>
+        <div class="bg-surface-container-highest rounded-lg p-3 text-on-surface-variant leading-relaxed max-w-[85%]">
+          <p class="font-bold font-mono text-[10px] ${senderTitleColor} mb-1 uppercase tracking-wider">${senderTitle}</p>
+          <div class="font-sans">${text}</div>
+        </div>
+      `;
 
-      {/* AI Assistant Core widget */}
-      <AIAssistant fleetState={assets} logs={logs} />
+      container.appendChild(div);
+      container.scrollTop = container.scrollHeight;
+      lucide.createIcons();
+    }
 
-      {/* Predictive restock dispatch popup modal */}
-      {selectedAssetForDispatch && (
-        <DispatchModal
-          asset={selectedAssetForDispatch}
-          logs={logs}
-          onClose={() => setSelectedAssetForDispatch(null)}
-          onConfirmDispatch={handleConfirmDispatch}
-        />
-      )}
+    // Initialize Payload stability index card sparkline chart via Chart.js
+    function initSparklineChart() {
+      const ctx = document.getElementById("sparkline-chart").getContext("2d");
+      
+      // Create subtle grid lines
+      sparklineChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: ['', '', '', '', '', '', '', '', '', ''],
+          datasets: [{
+            data: [...stabilityHistory],
+            borderColor: '#85d3dc',
+            borderWidth: 1.5,
+            fill: true,
+            backgroundColor: 'rgba(133,211,220,0.05)',
+            tension: 0.4,
+            pointRadius: 0,
+            pointHitRadius: 10
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { display: false },
+            y: { display: false }
+          }
+        }
+      });
+    }
 
-      {/* BottomNavBar (Mobile viewport only) matching mock HTML details */}
-      <nav className="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center h-16 md:hidden bg-surface-container border-t border-outline-variant/20 shadow-2xl px-4">
-        {[
-          { id: "telemetry", label: "DASHBOARD", icon: Activity },
-          { id: "thermal", label: "ALERTS", icon: Thermometer },
-          { id: "fleet", label: "FLEET", icon: Boxes },
-          { id: "dispatch", label: "REPORTS", icon: Truck },
-        ].map((item) => {
-          const Icon = item.icon;
-          const isActive = currentTab === item.id;
-          return (
-            <button
-              key={item.id}
-              onClick={() => setCurrentTab(item.id)}
-              className={`flex flex-col items-center justify-center rounded-xl px-4 py-1 active:scale-105 duration-150 cursor-pointer ${
-                isActive ? "text-tertiary bg-tertiary-container/30" : "text-on-surface-variant opacity-60"
-              }`}
-            >
-              <Icon className="w-5 h-5" />
-              <span className="font-mono text-[9px] tracking-widest font-bold">{item.label}</span>
-            </button>
-          );
-        })}
-      </nav>
+    // Initialize full-width Thermal analytics historical plot
+    function initMainThermalChart() {
+      const ctx = document.getElementById("thermal-analytics-main-chart").getContext("2d");
+      
+      if (mainThermalChartInstance) {
+        mainThermalChartInstance.destroy();
+      }
 
-      {/* Toast Notification overlays */}
-      <div className="fixed bottom-20 md:bottom-8 right-8 z-[120] flex flex-col gap-3 pointer-events-none">
-        {toasts.map((t) => (
-          <div
-            key={t.id}
-            className="bg-surface-container-highest border-l-4 border-tertiary p-4 rounded shadow-2xl flex items-center gap-4 transition-all duration-300 pointer-events-auto max-w-sm animate-in slide-in-from-right duration-200"
-          >
-            <Truck className="w-5 h-5 text-tertiary shrink-0 animate-bounce" />
-            <div className="flex flex-col font-mono text-xs">
-              <span className="font-bold text-white uppercase tracking-wider">{t.title}</span>
-              <span className="text-on-surface-variant text-[11px] leading-relaxed mt-0.5">
-                {t.message}
-              </span>
-            </div>
-            <button
-              onClick={() => setToasts((prev) => prev.filter((toast) => toast.id !== t.id))}
-              className="ml-auto opacity-50 hover:opacity-100 cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
+      // Build mock times
+      const labels = [];
+      const now = new Date();
+      for (let i = 9; i >= 0; i--) {
+        const d = new Date(now.getTime() - i * 60000);
+        labels.push(d.toLocaleTimeString("en-US", { hour12: false, minute: '2-digit', second: '2-digit' }));
+      }
+
+      const ccMetroData = assets.find(a => a.id === "CC-METRO-01")?.history || [-80.8, -80.8, -80.8, -80.8, -80.8, -80.8, -80.8, -80.8, -80.8, -80.8];
+      const ccCorpData = assets.find(a => a.id === "CC-CORP-12")?.history || [12.3, 12.3, 12.3, 12.3, 12.3, 12.3, 12.3, 12.3, 12.3, 12.3];
+      const ccCampData = assets.find(a => a.id === "CC-CAMP-05")?.history || [-62.6, -62.6, -62.6, -62.6, -62.6, -62.6, -62.6, -62.6, -62.6, -62.6];
+
+      mainThermalChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: 'CC-METRO-01 (Vaccine Type B)',
+              data: [...ccMetroData],
+              borderColor: '#85d3dc',
+              backgroundColor: 'rgba(133,211,220,0.03)',
+              borderWidth: 2,
+              tension: 0.3,
+              fill: false
+            },
+            {
+              label: 'CC-CORP-12 (Enzyme Alpha)',
+              data: [...ccCorpData],
+              borderColor: '#ffb4a9',
+              backgroundColor: 'rgba(255,180,169,0.03)',
+              borderWidth: 2,
+              tension: 0.3,
+              fill: false
+            },
+            {
+              label: 'CC-CAMP-05 (Reagent Gamma)',
+              data: [...ccCampData],
+              borderColor: '#f59e0b',
+              backgroundColor: 'rgba(245,158,11,0.03)',
+              borderWidth: 2,
+              tension: 0.3,
+              fill: false
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              display: false
+            }
+          },
+          scales: {
+            x: {
+              grid: {
+                color: 'rgba(69,71,75,0.1)'
+              },
+              ticks: {
+                color: '#c6c6cb',
+                font: { family: '"JetBrains Mono"', size: 9 }
+              }
+            },
+            y: {
+              grid: {
+                color: 'rgba(69,71,75,0.1)'
+              },
+              ticks: {
+                color: '#c6c6cb',
+                font: { family: '"JetBrains Mono"', size: 9 }
+              }
+            }
+          }
+        }
+      });
+    }
+  </script>
+
+</body>
+</html>
